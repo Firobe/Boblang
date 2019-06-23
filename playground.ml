@@ -13,12 +13,14 @@ type ttype =
   | TArrow of ttype * ttype
   | TComp of ttype
   | TSum of ttype * ttype
+  | TProduct of ttype * ttype
 
 let rec pp_ttype fmt = function
   | TUnit -> pp_print_string fmt "1"
   | TArrow (t1, t2) -> fprintf fmt "(%a -> %a)" pp_ttype t1 pp_ttype t2
   | TComp t -> fprintf fmt "comp(%a)" pp_ttype t
   | TSum (t1, t2) -> fprintf fmt "(%a + %a)" pp_ttype t1 pp_ttype t2
+  | TProduct (t1, t2) -> fprintf fmt "(%a x %a)" pp_ttype t1 pp_ttype t2
 
 type metatype = ttype * judgement
 [@@deriving show {with_path=false}]
@@ -34,6 +36,8 @@ type term =
   | Left of ttype * ttype * term
   | Right of ttype * ttype * term
   | Case of term * identifier * term * identifier * term
+  | Tuple of term * term
+  | Split of term * identifier * identifier * term
 
 let rec pp_term fmt = function
   | Unit -> pp_print_string fmt "()"
@@ -50,6 +54,10 @@ let rec pp_term fmt = function
   | Case (e, x1, e1, x2, e2) ->
     fprintf fmt "@[<hv 2>(match@ %a with@ left(%s) ->@ %a@ right(%s) ->@ %a@]@,)"
       pp_term e x1 pp_term e1 x2 pp_term e2
+  | Tuple (t1, t2) -> fprintf fmt "@[<hv 2><%a,@ %a@]@,>" pp_term t1 pp_term t2
+  | Split (e, x1, x2, e') ->
+    fprintf fmt "@[<hv 2>(let <%s,%s> =@ %a@ in %a@]@,)"
+      x1 x2 pp_term e pp_term e'
 
 (* Statics *)
 
@@ -115,6 +123,21 @@ let typecheck =
           else failwith "First branch of case is not a comput"
         else failwith "Branches in case do not have the same type"
       | _ -> failwith "Case expects a value of type sum"
+    end
+  | Tuple (v1, v2) ->
+    let tau1, j1 = aux env v1 in
+    let tau2, j2 = aux env v2 in
+    if j1 = JValue then
+      if j2 = JValue then (TProduct (tau1, tau2), JValue)
+      else failwith "Second component of tuple must be a value"
+    else failwith "First component of tuple must be a value"
+  | Split (e, x1, x2, e') ->
+    begin match aux env e with
+      | TProduct (tau1, tau2), JValue ->
+        let tau, j = aux ((x1, tau1) :: (x2, tau2) :: env) e' in
+        if j = JComp then (tau, JComp)
+        else failwith "Result of split should a computation"
+      | _ -> failwith "Split expects a value of type product"
     end
   in aux []
 
