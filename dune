@@ -1,0 +1,4 @@
+(executable
+    (name playground)
+    (preprocess (pps ppx_deriving.std))
+)
