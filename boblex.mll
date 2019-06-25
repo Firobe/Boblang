@@ -2,11 +2,12 @@
     open Bobgram
 }
 let white = [' ' '\t' '\n']+
-let stext = ['a'-'z' '_']['a'-'z' '_' '0'-'9']*
-let ctext = ['A'-'Z']['A'-'Z' '_' '0'-'9']*
+let stext = ['a'-'z' '_']['a'-'z' '_' '0'-'9' '\'']*
+let ctext = ['A'-'Z']['A'-'Z' '_' '0'-'9' '\'']*
 
 rule read = parse
 | white { read lexbuf }
+| "(*" { comment lexbuf }
 | "Type" { TYPE }
 | "Declare" { DECLARE }
 | "Typemacro" { TYPEMACRO }
@@ -39,5 +40,10 @@ rule read = parse
 | "ret" { RET }
 | stext { ID (Lexing.lexeme lexbuf) }
 | ctext { MID (Lexing.lexeme lexbuf) }
-| _ { raise (Utils.SyntaxError ("Unexpected char: " ^ Lexing.lexeme lexbuf)) }
 | eof { EOF }
+| _ { raise (Utils.SyntaxError ("Unexpected char: " ^ Lexing.lexeme lexbuf)) }
+
+and comment = parse
+| "*)" { read lexbuf }
+| '*' { comment lexbuf }
+| [^ '*']+ { comment lexbuf }

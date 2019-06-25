@@ -20,7 +20,7 @@ let typecheck =
   | Unit -> (TUnit, JValue)
   | Variable v ->
     begin match List.assoc_opt v env with
-      | None -> failwith "Some variable is not bound"
+      | None -> failwith ("Variable " ^ v ^ " is not bound")
       | Some t -> (t, JValue)
     end
   | Computation t ->
@@ -114,7 +114,7 @@ let typecheck =
       else failwith "Good luck with that"
     else failwith "Fold expects a value"
   | Fold _ -> failwith "Fold expect a recursive type annotation"
-  | Macro _ -> assert false
+  | Macro (n, _, _) -> failwith ("Macro " ^ n ^ " not expanded")
   in aux []
 
 (* DYNAMICS *)
@@ -149,7 +149,7 @@ let rec substitute f t = function
     Split (e1', x1, x2, e2')
   | Fold (a, e) -> Fold (a, substitute f t e)
   | Unfold e -> Unfold (substitute f t e)
-  | Macro (id, tl) -> Macro (id, List.map (substitute f t) tl)
+  | Macro (id, ttl, tl) -> Macro (id, ttl, List.map (substitute f t) tl)
 
 (* [step t] returns (Some t') where t -> t' or None if evaluation is stuck *)
 let rec step = function
@@ -284,8 +284,24 @@ let analyse_term todo =
 let expand_known_types t =
   List.fold_left (fun e (id, v) -> tsubstitute id v e) t
 
-let tyexpand_everything tyenv _ t =
-  expand_known_types t tyenv
+let tyexpand_everything tyenv matyenv t =
+  let t' = expand_known_types t tyenv in
+  let rec tymapply ((f, params, r) as w) = function
+    | TUnit -> TUnit
+    | TMacro (id, tl) ->
+      let tl' = List.map (tymapply w) tl in
+      if id = f then
+        List.fold_left2 (fun a b c -> tsubstitute b c a) r params tl
+      else TMacro (id, tl')
+    | (TVar _) as v -> v
+    | TArrow (tau1, tau2) -> 
+      TArrow (tymapply w tau1, tymapply w tau2)
+    | TComp tau -> TComp (tymapply w tau)
+    | TSum (tau1, tau2) -> TSum (tymapply w tau1, tymapply w tau2)
+    | TProduct (tau1, tau2) -> TProduct (tymapply w tau1, tymapply w tau2)
+    | (TRecursive (id, _)) as r when id = f -> r
+    | TRecursive (id, tau) -> TRecursive (id, tymapply w tau)
+  in List.fold_left (fun e w -> tymapply w e) t' matyenv
 
 let expand_known_terms t =
   List.fold_left (fun e (id, v) -> substitute id v e) t
@@ -307,27 +323,68 @@ let expand_types_in_term tyenv matyenv =
   | Split (e, x1, x2, e') -> Split (aux e, x1, x2, aux e')
   | Fold (t, e) -> Fold (te t, aux e)
   | Unfold t -> Unfold (aux t)
-  | Macro (id, tl) -> Macro (id, List.map aux tl)
+  | Macro (id, ttl, tl) -> Macro (id, List.map te ttl, List.map aux tl)
   in aux
 
 
-let texpand_everything tenv tyenv _ matyenv t =
+let texpand_everything tenv tyenv matenv matyenv t =
   let t' = expand_known_terms t tenv in
-  expand_types_in_term tyenv matyenv t'
+  let rec tmapply ((f, tparams, params, r) as w) = function
+    | Macro (id, ttl, tl) ->
+      let tl' = List.map (tmapply w) tl in
+      let ttl' = List.map (tyexpand_everything tyenv matyenv) ttl in
+      if id = f then
+        if f = "SUBSTITUTE" then
+          begin match tl' with
+            | [Variable n; tot; intt] ->
+              Format.printf "Replacing %s by %a@," n pp_term tot;
+              substitute n tot intt
+            | _ -> failwith "SUBSTITUTE wrongly applied"
+          end
+        else
+        let r' = List.fold_left2 (fun a b c -> substitute b c a) r params tl' in
+        let assoc = List.map2 (fun a b -> (a, b)) tparams ttl' in
+        expand_types_in_term assoc [] r'
+      else Macro (id, ttl', tl')
+    | Unit -> Unit
+    | (Variable _) as v -> v
+    | Computation t -> Computation (tmapply w t)
+    | Abstraction (t, id, e) -> Abstraction (t, id, tmapply w e)
+    | Return t -> Return (tmapply w t)
+    | Bind (e1, id, e2) -> Bind (tmapply w e1, id, tmapply w e2)
+    | Application (e1, e2) -> Application (tmapply w e1, tmapply w e2)
+    | Left (t, e) -> Left (t, tmapply w e)
+    | Right (t, e) -> Right (t, tmapply w e)
+    | Case (e, x1, e1, x2, e2) -> Case (tmapply w e, x1, tmapply w e1, x2, tmapply w e2)
+    | Tuple (e1, e2) -> Tuple (tmapply w e1, tmapply w e2)
+    | Split (e, x1, x2, e') -> Split (tmapply w e, x1, x2, tmapply w e')
+    | Fold (t, e) -> Fold (t, tmapply w e)
+    | Unfold t -> Unfold (tmapply w t)
+  in
+  let t'' = List.fold_left (fun e w -> tmapply w e) t' matenv in
+  expand_types_in_term tyenv matyenv t''
 
 let execute =
   let one tenv tyenv matenv matyenv = function
     | Declare (n, t) ->
       let t' = texpand_everything tenv tyenv matenv matyenv t in
-      let tau, j = typecheck t' in
+      let ts = texpand_everything tenv tyenv (("SUBSTITUTE", [], [], Unit) ::
+                                              matenv) matyenv t' in
+      let tau, j = typecheck ts in
       printf "%a %s : %a@," pp_judgement j n pp_ttype tau;
-      (n, t') :: tenv, tyenv, matenv, matyenv
+      (n, ts) :: tenv, tyenv, matenv, matyenv
     | Type (n, t) ->
       let t' = tyexpand_everything tyenv matyenv t in
       printf "type %s : %a@," n pp_ttype t';
       tenv, (n, t') :: tyenv, matenv, matyenv
-    | DeclareMacro _ -> assert false
-    | Typemacro _ -> assert false
+    | DeclareMacro (n, tparams, params, t) ->
+      let t' = texpand_everything tenv tyenv matenv matyenv t in
+      printf "Macro %s registered@," n;
+      tenv, tyenv, (n, tparams, params, t') :: matenv, matyenv
+    | Typemacro (n, params, t) ->
+      let t' = tyexpand_everything tyenv matyenv t in
+      printf "Typemacro %s registered@," n;
+      tenv, tyenv, matenv, (n, params, t') :: matyenv
     | Check t ->
       let t' = texpand_everything tenv tyenv matenv matyenv t in
       let r = typecheck t' in

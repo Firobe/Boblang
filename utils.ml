@@ -50,14 +50,13 @@ type term =
   | Split of term * identifier * identifier * term
   | Fold of ttype * term
   | Unfold of term
-  | Macro of identifier * term list
+  | Macro of identifier * ttype list * term list
 
 let rec pp_term fmt = function
   | Unit -> pp_print_string fmt "()"
   | Variable v -> pp_print_string fmt v
   | Computation t -> fprintf fmt "@[<hv 2>comp(@,%a@]@,)" pp_term t
-  | Abstraction (t, id, e) -> fprintf fmt "@[<hv 2>λ[%a](%s,@ %a@]@,)" pp_ttype
-                                t id pp_term e
+  | Abstraction (_, id, e) -> fprintf fmt "@[<hv 2>λ(%s,@ %a@]@,)" id pp_term e
   | Return t -> fprintf fmt "ret (%a)" pp_term t
   | Bind (t, id, e) -> fprintf fmt "@[<hv 2>let %s =@ %a@]@ in %a" id pp_term t pp_term e
   | Application (t1, t2) -> fprintf fmt "@[<hv 2>(@,%a@ . %a@]@,)" pp_term t1 pp_term t2
@@ -72,14 +71,14 @@ let rec pp_term fmt = function
   | Split (e, x1, x2, e') ->
     fprintf fmt "@[<hv 2>(let <%s,%s> =@ %a@ in %a@]@,)"
       x1 x2 pp_term e pp_term e'
-  | Fold (t, e) -> fprintf fmt "@[<hv 2>fold[%a](@,%a@]@,)" pp_ttype t pp_term e
+  | Fold (_, e) -> fprintf fmt "@[<hv 2>fold(@,%a@]@,)" pp_term e
   | Unfold e -> fprintf fmt "@[<hv 2>unfold(@,%a@]@,)" pp_term e
   | Macro _ -> assert false
 
 type command =
   | Declare of string * term
   | Type of string * ttype
-  | DeclareMacro of string * string list * term
+  | DeclareMacro of string * string list * string list * term
   | Typemacro of string * string list * ttype
   | Check of term
   | Eval of term

@@ -41,7 +41,9 @@ program: l = command* EOF {l}
 command:
 | DECLARE; n = ID; EQUAL; t = term {Utils.Declare (n, t)}
 | TYPE; n = ID; EQUAL; t = typ {Utils.Type (n, t)}
-| MACRO; n = MID; params = ID*; EQUAL; t = term {Utils.DeclareMacro (n, params, t)}
+| MACRO; n = MID; LEFT_BRACKET; tparams = ID*; RIGHT_BRACKET;params = ID*;
+    EQUAL; t = term {Utils.DeclareMacro (n, tparams, params, t)}
+| MACRO; n = MID; params = ID*; EQUAL; t = term {Utils.DeclareMacro (n, [], params, t)}
 | TYPEMACRO; n = MID; params = ID*; EQUAL; t = typ {Utils.Typemacro (n, params, t)}
 | CHECK; t = term {Utils.Check t}
 | EVAL; t = term {Utils.Eval t}
@@ -67,8 +69,11 @@ term:
     { Utils.Fold (tt, t) }
 | UNFOLD; LEFT_PAREN; t = term; RIGHT_PAREN { Utils.Unfold t }
 | n = ID { Utils.Variable n }
+| n = MID; LEFT_BRACKET; l1 = separated_nonempty_list (COMMA, typ);
+    RIGHT_BRACKET;LEFT_PAREN; l2 = separated_nonempty_list(COMMA, term); RIGHT_PAREN
+    { Utils.Macro (n, l1, l2) }
 | n = MID; LEFT_PAREN; l = separated_nonempty_list(COMMA, term); RIGHT_PAREN
-    { Utils.Macro (n, l) }
+    { Utils.Macro (n, [], l) }
 
 typ:
 | ONE { Utils.TUnit }
