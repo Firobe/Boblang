@@ -3,7 +3,7 @@
 An implementation of FPC (PCF + recursive types) by value, with a encoding of by
 name thanks to a computation/value modality.
 
-Written after following a lecture of Robert "Bob" Haper in OPLSS 2019.
+Written after following a lecture of Robert "Bob" Harper in OPLSS 2019.
 
 ## Language features
 
