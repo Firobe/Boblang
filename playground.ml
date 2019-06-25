@@ -23,7 +23,7 @@ let rec pp_ttype fmt = function
   | TComp t -> fprintf fmt "comp(%a)" pp_ttype t
   | TSum (t1, t2) -> fprintf fmt "(%a + %a)" pp_ttype t1 pp_ttype t2
   | TProduct (t1, t2) -> fprintf fmt "(%a x %a)" pp_ttype t1 pp_ttype t2
-  | TRecursive (id, t) -> fprintf fmt "rec(%s -> %a)" id pp_ttype t
+  | TRecursive (id, t) -> fprintf fmt "rec(%s, %a)" id pp_ttype t
   | TVar s -> pp_print_string fmt s
 
 type metatype = ttype * judgement
@@ -49,7 +49,8 @@ let rec pp_term fmt = function
   | Unit -> pp_print_string fmt "()"
   | Variable v -> pp_print_string fmt v
   | Computation t -> fprintf fmt "@[<hv 2>comp(@,%a@]@,)" pp_term t
-  | Abstraction (_, id, e) -> fprintf fmt "@[<hv 2>λ(%s,@ %a@]@,)" id pp_term e
+  | Abstraction (t, id, e) -> fprintf fmt "@[<hv 2>λ[%a](%s,@ %a@]@,)" pp_ttype
+                                t id pp_term e
   | Return t -> fprintf fmt "ret (%a)" pp_term t
   | Bind (t, id, e) -> fprintf fmt "@[<hv 2>let %s =@ %a@]@ in %a" id pp_term t pp_term e
   | Application (t1, t2) -> fprintf fmt "@[<hv 2>(@,%a@ . %a@]@,)" pp_term t1 pp_term t2
@@ -64,7 +65,7 @@ let rec pp_term fmt = function
   | Split (e, x1, x2, e') ->
     fprintf fmt "@[<hv 2>(let <%s,%s> =@ %a@ in %a@]@,)"
       x1 x2 pp_term e pp_term e'
-  | Fold (_, e) -> fprintf fmt "@[<hv 2>fold(@,%a@]@,)" pp_term e
+  | Fold (t, e) -> fprintf fmt "@[<hv 2>fold[%a](@,%a@]@,)" pp_ttype t pp_term e
   | Unfold e -> fprintf fmt "@[<hv 2>unfold(@,%a@]@,)" pp_term e
 
 (* STATICS *)
@@ -117,7 +118,8 @@ let typecheck =
           if tau'' = tau then (tau', JComp)
           else failwith "Incompatible types during application"
         else failwith "Functions only applicable to values"
-      | _ -> failwith "Can only apply functional values"
+      | tt -> Format.printf "%a : %a" pp_term e1 pp_metatype tt;
+        failwith "Can only apply functional values"
     end
   | Left (TSum (tau1, tau2), e) ->
     let tau'', j = aux env e in
@@ -229,17 +231,22 @@ let rec step = function
 let self_t tau = TRecursive("t", TArrow (TVar "t", tau))
 let self tau x e = Fold (self_t tau,
                 Abstraction(self_t tau, x, e))
+
+let name_id = ref 0
+let new_name () =
+  name_id := !name_id + 1;
+  "_" ^ (string_of_int !name_id)
+
 let unroll e = 
-  Bind (Computation (Unfold e), "tmp",
-        Application (Variable "tmp", e)
+  let nn = new_name () in
+  Bind (Computation (Unfold e), nn,
+        Application (Variable nn, e)
        )
 
 let fix tau x e =
   unroll (self tau "y" (substitute x (unroll (Variable "y")) e))
 
-
 (* TESTING *)
-
 
 (* Basic PCF *)
 
@@ -280,19 +287,41 @@ let one = Application (minus_one, two)
 
 (* Recursive function on recursive data structure *)
 
-let double = fix int_t "double"
-    (Abstraction (int_t, "x",
-                  Bind (Computation (Unfold (Variable "x")), "x'",
-                        Case (Variable "x'", "_", Return zero,
-                              "e", Bind (Computation (Application (Variable "double",
-                                                                   Variable "e")
-                                                     ), "de",
-                                         Return (succ (succ (Variable "de")))
-                                        )
-                             )
-                       )
-                 )
+let selft = self TUnit "id" (Return Unit)
+let unrollt = unroll selft
+let infinite = fix (TArrow (TUnit, TUnit)) "infinite"
+    (Return 
+       (Abstraction (TUnit, "_",
+                     Bind (Computation (Variable "infinite"),
+                           "rec", Application (Variable "rec", Unit)
+                          )
+                    )
+       )
     )
+
+let double = fix (TArrow (int_t, int_t)) "double"
+    (Return 
+       (Abstraction (int_t, "x",
+                     Bind (Computation (Unfold (Variable "x")), "x'",
+                           Case (Variable "x'", "_", Return zero,
+                                 "e", 
+                                 Bind (Computation (Variable "double"), "rec",
+                                       Bind (Computation (Application (Variable "rec",
+                                                                       Variable "e")
+                                                         ), "de",
+                                             Return (succ (succ (Variable "de")))
+                                            )
+                                      )
+                                )
+                          )
+                    )
+       )
+    )
+
+let apply_infinite =
+  Bind (Computation infinite, "f", Application (Variable "f", Unit))
+let apply_double =
+  Bind (Computation double, "f", Application (Variable "f", succ (zero)))
 
 
 let rec eval t =
@@ -308,12 +337,17 @@ let analyse_term todo =
   let t = typecheck todo in
   printf "--> Type: %a@," pp_metatype t
 
+
 let _ =
-  analyse_term double;
+  analyse_term double_b;
   analyse_term identity;
   analyse_term twiceid;
   analyse_term applied;
   analyse_term two;
   analyse_term minus_one;
   analyse_term one;
-  analyse_term double
+  analyse_term selft;
+  analyse_term unrollt;
+  analyse_term infinite;
+  analyse_term double;
+  analyse_term apply_double
