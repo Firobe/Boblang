@@ -14,6 +14,8 @@ type ttype =
   | TComp of ttype
   | TSum of ttype * ttype
   | TProduct of ttype * ttype
+  | TRecursive of identifier * ttype
+  | TVar of identifier
 
 let rec pp_ttype fmt = function
   | TUnit -> pp_print_string fmt "1"
@@ -21,6 +23,8 @@ let rec pp_ttype fmt = function
   | TComp t -> fprintf fmt "comp(%a)" pp_ttype t
   | TSum (t1, t2) -> fprintf fmt "(%a + %a)" pp_ttype t1 pp_ttype t2
   | TProduct (t1, t2) -> fprintf fmt "(%a x %a)" pp_ttype t1 pp_ttype t2
+  | TRecursive (id, t) -> fprintf fmt "rec(%s -> %a)" id pp_ttype t
+  | TVar s -> pp_print_string fmt s
 
 type metatype = ttype * judgement
 [@@deriving show {with_path=false}]
@@ -33,11 +37,13 @@ type term =
   | Return of term
   | Bind of term * identifier * term
   | Application of term * term
-  | Left of ttype * ttype * term
-  | Right of ttype * ttype * term
+  | Left of ttype * term
+  | Right of ttype * term
   | Case of term * identifier * term * identifier * term
   | Tuple of term * term
   | Split of term * identifier * identifier * term
+  | Fold of ttype * term
+  | Unfold of term
 
 let rec pp_term fmt = function
   | Unit -> pp_print_string fmt "()"
@@ -47,10 +53,10 @@ let rec pp_term fmt = function
   | Return t -> fprintf fmt "ret (%a)" pp_term t
   | Bind (t, id, e) -> fprintf fmt "@[<hv 2>let %s =@ %a@]@ in %a" id pp_term t pp_term e
   | Application (t1, t2) -> fprintf fmt "@[<hv 2>(@,%a@ . %a@]@,)" pp_term t1 pp_term t2
-  | Left (tau1, tau2, t) -> fprintf fmt "@[<hv 2>left[%a + %a](@,%a@]@,)"
-                              pp_ttype tau1 pp_ttype tau2 pp_term t
-  | Right (tau1, tau2, t) -> fprintf fmt "@[<hv 2>right[%a + %a](@,%a@]@,)"
-                              pp_ttype tau1 pp_ttype tau2 pp_term t
+  | Left (_, t) -> fprintf fmt "@[<hv 2>left(@,%a@]@,)"
+                     pp_term t
+  | Right (_, t) -> fprintf fmt "@[<hv 2>right(@,%a@]@,)"
+                      pp_term t
   | Case (e, x1, e1, x2, e2) ->
     fprintf fmt "@[<hv 2>(match@ %a with@ left(%s) ->@ %a@ right(%s) ->@ %a@]@,)"
       pp_term e x1 pp_term e1 x2 pp_term e2
@@ -58,15 +64,29 @@ let rec pp_term fmt = function
   | Split (e, x1, x2, e') ->
     fprintf fmt "@[<hv 2>(let <%s,%s> =@ %a@ in %a@]@,)"
       x1 x2 pp_term e pp_term e'
+  | Fold (_, e) -> fprintf fmt "@[<hv 2>fold(@,%a@]@,)" pp_term e
+  | Unfold e -> fprintf fmt "@[<hv 2>unfold(@,%a@]@,)" pp_term e
 
-(* Statics *)
+(* STATICS *)
+
+let rec tsubstitute f t = function
+  | TUnit -> TUnit
+  | TVar id when id = f -> t
+  | (TVar _) as v -> v
+  | TArrow (tau1, tau2) -> 
+    TArrow (tsubstitute f t tau1, tsubstitute f t tau2)
+  | TComp tau -> TComp (tsubstitute f t tau)
+  | TSum (tau1, tau2) -> TSum (tsubstitute f t tau1, tsubstitute f t tau2)
+  | TProduct (tau1, tau2) -> TProduct (tsubstitute f t tau1, tsubstitute f t tau2)
+  | (TRecursive (id, _)) as r when id = f -> r
+  | TRecursive (id, tau) -> TRecursive (id, tsubstitute f t tau)
 
 let typecheck =
   let rec aux env = function
   | Unit -> (TUnit, JValue)
   | Variable v ->
     begin match List.assoc_opt v env with
-      | None -> failwith "NIIIII"
+      | None -> failwith "Some variable is not bound"
       | Some t -> (t, JValue)
     end
   | Computation t ->
@@ -97,20 +117,22 @@ let typecheck =
           if tau'' = tau then (tau', JComp)
           else failwith "Incompatible types during application"
         else failwith "Functions only applicable to values"
-      | _ -> failwith "Can only apply functions"
+      | _ -> failwith "Can only apply functional values"
     end
-  | Left (tau1, tau2, e) ->
+  | Left (TSum (tau1, tau2), e) ->
     let tau'', j = aux env e in
     if j = JValue then
       if tau'' = tau1 then (TSum (tau1, tau2), JValue)
       else failwith "Wrong annotation in left"
     else failwith "Left expects a value"
-  | Right (tau1, tau2, e) ->
+  | Left _ -> failwith "Left expects a sum type annotation"
+  | Right (TSum (tau1, tau2), e) ->
     let tau'', j = aux env e in
     if j = JValue then
       if tau'' = tau2 then (TSum (tau1, tau2), JValue)
       else failwith "Wrong annotation in right"
     else failwith "Right expects a value"
+  | Right _ -> failwith "Right expects a sum type annotation"
   | Case (e, x1, e1, x2, e2) ->
     begin match aux env e with
       | TSum (tau1, tau2), JValue ->
@@ -139,22 +161,28 @@ let typecheck =
         else failwith "Result of split should a computation"
       | _ -> failwith "Split expects a value of type product"
     end
+  | Unfold e ->
+    begin match aux env e with
+      | TRecursive (id, tau) as rect, JValue ->
+        tsubstitute id rect tau, JComp
+      | _ -> failwith "Unfold expects a recursive value"
+    end
+  | Fold (TRecursive(id, tau), e) ->
+    let rect = TRecursive (id, tau) in
+    let tau', j = aux env e in
+    if j = JValue then
+      if tau' = tsubstitute id rect tau
+      then rect, JValue
+      else failwith "Good luck with that"
+    else failwith "Fold expects a value"
+  | Fold _ -> failwith "Fold expect a recursive type annotation"
   in aux []
 
-(* Dynamics *)
+(* DYNAMICS *)
 
 let opb o f = match o with
   | None -> None
   | Some x -> Some (f x)
-
-let nid = ref 0
-let new_name () =
-  nid := 1 + !nid;
-  "v" ^ (string_of_int !nid)
-
-let rec new_name_not id =
-  let nn = new_name () in
-  if nn = id then new_name_not id else nn
 
 (* [substitute f t e] replaces variables named f in e by term t] *)
 let rec substitute f t = function
@@ -162,33 +190,24 @@ let rec substitute f t = function
   | Variable v when v = f -> t
   | Variable v -> Variable v
   | Computation c -> Computation (substitute f t c)
-  | Abstraction (tt, id, a) when id = f ->
-    let nn = new_name () in
-    let beta = substitute id (Variable nn) a in
-    substitute f t (Abstraction (tt, nn, beta))
   | Abstraction (tt, id, a) -> Abstraction (tt, id, substitute f t a)
   | Return r -> Return (substitute f t r)
-  | Bind (t1, id, t2) when id = f ->
-    let nn = new_name () in
-    let beta = substitute id (Variable nn) t2 in
-    substitute f t (Bind (t1, nn, beta))
   | Bind (t1, id, t2) -> Bind (substitute f t t1, id, substitute f t t2)
   | Application (t1, t2) -> Application (substitute f t t1, substitute f t t2)
-  | Right (t1, t2, e) -> Right (t1, t2, substitute f t e)
-  | Left (t1, t2, e) -> Left (t1, t2, substitute f t e)
-  | Case (e, x1, e1, x2, e2) when f = x1 ->
-    let nn = new_name_not f in
-    let e1' = substitute x1 (Variable "nn") e1 in
-    substitute f t (Case (e, nn, e1', x2, e2))
-  | Case (e, x1, e1, x2, e2) when f = x2 ->
-    let nn = new_name_not f in
-    let e2' = substitute x2 (Variable "nn") e2 in
-    substitute f t (Case (e, x1, e1, nn, e2'))
+  | Right (ty, e) -> Right (ty, substitute f t e)
+  | Left (ty, e) -> Left (ty, substitute f t e)
   | Case (e, x1, e1, x2, e2) ->
     let e' = substitute f t e in
     let e1' = substitute f t e1 in
     let e2' = substitute f t e2 in
     Case (e', x1, e1', x2, e2')
+  | Tuple (t1, t2) -> Tuple (substitute f t t1, substitute f t t2)
+  | Split (e1, x1, x2, e2) ->
+    let e1' = substitute f t e1 in
+    let e2' = substitute f t e2 in
+    Split (e1', x1, x2, e2')
+  | Fold (a, e) -> Fold (a, substitute f t e)
+  | Unfold e -> Unfold (substitute f t e)
 
 (* [step t] returns (Some t') where t -> t' or None if evaluation is stuck *)
 let rec step = function
@@ -196,19 +215,39 @@ let rec step = function
   | Bind (Computation (Return v), x, e) -> Some (substitute x v e)
   | Bind (Computation e, x, e2) ->
     opb (step e) (fun e' -> Bind (Computation e', x, e2))
-  | Case (Left (_, _, v), x, e, _, _) -> Some (substitute x v e)
-  | Case (Right (_, _, v), _, _, x, e) -> Some (substitute x v e)
+  | Case (Left (_, v), x, e, _, _) -> Some (substitute x v e)
+  | Case (Right (_, v), _, _, x, e) -> Some (substitute x v e)
   | Case (e, x1, e1, x2, e2) ->
     opb (step e) (fun e' -> Case (e', x1, e1, x2, e2))
+  | Split (Tuple (a, b), x1, x2, e) -> Some (substitute x1 a (substitute x2 b e))
+  | Unfold (Fold ( _, e)) -> Some (Return e)
+  | Unfold e -> opb (step e) (fun e' -> Unfold e')
   | _ -> None
 
-(* Testing *)
+(* Self-reference definitions *)
+
+let self_t tau = TRecursive("t", TArrow (TVar "t", tau))
+let self tau x e = Fold (self_t tau,
+                Abstraction(self_t tau, x, e))
+let unroll e = 
+  Bind (Computation (Unfold e), "tmp",
+        Application (Variable "tmp", e)
+       )
+
+let fix tau x e =
+  unroll (self tau "y" (substitute x (unroll (Variable "y")) e))
+
+
+(* TESTING *)
+
+
+(* Basic PCF *)
 
 let bool_t = TSum (TUnit, TUnit)
-let btrue = Left (TUnit, TUnit, Unit)
-let bfalse = Right (TUnit, TUnit, Unit)
+let btrue = Left (bool_t, Unit)
+let bfalse = Right (bool_t, Unit)
 
-let double = Abstraction(TArrow (bool_t, bool_t), "f",
+let double_b = Abstraction(TArrow (bool_t, bool_t), "f",
                 Return (Abstraction(bool_t, "x",
                     Bind(
                         Computation (Application (Variable "f", Variable "x")),
@@ -219,10 +258,42 @@ let flip = Abstraction(bool_t, "b",
             Case(Variable "b", "true", Return bfalse, "false", Return btrue))
 
 let twiceid = Abstraction (bool_t, "x",
-                Bind (Computation(Application (double, flip)), "res",
+                Bind (Computation(Application (double_b, flip)), "res",
                       Application (Variable "res", Variable "x")))
 
 let applied = Application (twiceid, btrue)
+
+(* Recursive type, finite algorithms *)
+
+let int_t = TRecursive ("t", TSum (TUnit, TVar "t"))
+let zero = Fold(int_t, Left (TSum (TUnit, int_t), Unit))
+let succ e = Fold(int_t, Right (TSum (TUnit, int_t), e))
+
+let two = succ (succ zero)
+
+let minus_one = Abstraction (int_t, "i",
+                   Bind(Computation(Unfold (Variable "i")), "x",
+                      Case(Variable "x", "zero", Return (Variable "i"),
+                           "pred", Return (Variable "pred"))))
+
+let one = Application (minus_one, two)
+
+(* Recursive function on recursive data structure *)
+
+let double = fix int_t "double"
+    (Abstraction (int_t, "x",
+                  Bind (Computation (Unfold (Variable "x")), "x'",
+                        Case (Variable "x'", "_", Return zero,
+                              "e", Bind (Computation (Application (Variable "double",
+                                                                   Variable "e")
+                                                     ), "de",
+                                         Return (succ (succ (Variable "de")))
+                                        )
+                             )
+                       )
+                 )
+    )
+
 
 let rec eval t =
   Format.printf "@,===================================@,@[<hv>%a@]" pp_term t;
@@ -241,4 +312,8 @@ let _ =
   analyse_term double;
   analyse_term identity;
   analyse_term twiceid;
-  analyse_term applied
+  analyse_term applied;
+  analyse_term two;
+  analyse_term minus_one;
+  analyse_term one;
+  analyse_term double
