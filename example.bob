@@ -121,13 +121,3 @@ Eval
         letr f = comp(infinite) in (f. ()),
         ret(())
     )
-
-Type stream = rec(t, (bool * comp(t)))
-
-Declare zeros = FIX[stream](zeros,
-    ret (false, comp(zeros)))
-
-
-
-
-
