@@ -1,13 +1,41 @@
-(* Recursion stuff *)
-Typemacro SELF tau = rec(t, (t -> tau))
-Macro SELF [tau] expr = fold[SELF(tau)](fun (tmp : SELF(tau)) -> expr)
-Macro UNROLL g =
-     letr unf = comp(unfold(g)) in
-     (unf . g)
-Macro FIX [tau] x e =
-     UNROLL(SELF[tau](SUBSTITUTE(x, UNROLL(tmp), e)))
+(* Declare a boolean type *)
+Type bool = (1 + 1)
 
-(* Natural numbers definition *)
+(* left() and right() operators need a type annotation to know to what type we
+ * are injecting *)
+Declare true = left[bool]( () )
+Declare false = right[bool]( () )
+
+(* Evaluate an expression *)
+Eval true
+
+Declare flip = fun (x : bool) ->
+    case x of
+        left(_) (* true *) -> ret (false) (* lambdas should return computations *)
+        right(_) (* false *) -> ret (true)
+
+Eval (flip . true)
+Eval false
+
+Declare apply_twice =
+    fun (f : (bool -> bool)) -> ret(
+        fun (x : bool) ->
+            (* The result of an application is a computation,
+             * so we need to wrap it in a comp and
+             * bind it with letr to get the value
+             *)
+            letr once = comp((f . x)) in
+            (f . once)
+    )
+
+(* Display the type of an expression *)
+Check (apply_twice . flip)
+
+Eval
+    letr double_flip = comp((apply_twice . flip)) in
+    (double_flip . true)
+
+(* Natural numbers definition using a recursive type *)
 Type nat = rec(t, (1 + t))
 Declare zero = fold[nat](left[(1 + nat)](()))
 Declare succ = fun (x : nat) -> ret (fold[nat](right[(1 + nat)](x)))
@@ -23,14 +51,31 @@ Declare minus_one = fun (i : nat) ->
 
 Eval letr twu = two in (minus_one . twu)
 
-(* A boring recursive function (do not eval!) *)
+(*** Definition of a fixpoint operator as a macro ***)
+
+(* Type macros take type parameters and return a type *)
+Typemacro SELF tau = rec(t, (t -> tau))
+
+(* Normal macros take type parameters in brackets and normal parameters after *)
+Macro SELF [tau] expr = fold[SELF(tau)](fun (tmp : SELF(tau)) -> expr)
+
+(* All macro names must be in CAPITAL LETTERS *)
+Macro UNROLL g =
+     letr unf = comp(unfold(g)) in
+     (unf . g)
+
+(* SUBSTITUTE(f,t,e) is a built-in macro substituting f by t in e *)
+Macro FIX [tau] x e =
+     UNROLL(SELF[tau](SUBSTITUTE(x, UNROLL(tmp), e)))
+
+
+(* A boring recursive function (eval it if you dare) *)
 Declare infinite = FIX[(1 -> 1)](infinite,
     ret( fun (_ : 1) ->
             letr f = comp(infinite) in
             (f . ())
     )
 )
-
 
 (* An exciting recursive function ! *)
 Declare double = FIX[(nat -> nat)](double,
@@ -46,9 +91,33 @@ Declare double = FIX[(nat -> nat)](double,
              ret (doubled'')
   ))
 
-Check ())
-
 (* Wow, 2 * 2 = 4 *)
 Eval
     letr twu = two in
     letr f = comp(double) in (f . twu)
+
+(* We can effectively simulate call by name *)
+
+(* Define an IF for branches returning suspended unit computations *)
+Declare if_unit =
+    fun (b : bool) -> ret (
+    fun (e1 : comp(1)) -> ret (
+    fun (e2 : comp(1)) -> 
+        case b of
+            left(l) -> letr r = e1 in ret (r)
+            right(r) -> letr r = e2 in ret (r)
+    ))
+
+(* A easier syntax for applicating it and automatically suspending
+ * the computations of the parameters *)
+Macro IF_UNIT b e1 e2 =
+    letr if' = comp((if_unit . b)) in
+    letr if'' = comp((if' . comp(e1))) in
+    (if'' . comp(e2))
+
+(* The infinite branch is not evaluated (try replacing false by true *)
+Eval
+    IF_UNIT(false,
+        letr f = comp(infinite) in (f. ()),
+        ret(())
+    )

@@ -21,3 +21,6 @@ Boblang comes with:
 
 Compile with `dune build playground.exe`  
 Execute with `dune exec ./playground.exe source.bob`
+
+
+Read the `example.bob` file for examples of usage
