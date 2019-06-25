@@ -38,6 +38,8 @@ rule read = parse
 | "case" { CASE }
 | "of" { OF }
 | "ret" { RET }
+| '*' { STAR }
+| "lets" { LETS }
 | stext { ID (Lexing.lexeme lexbuf) }
 | ctext { MID (Lexing.lexeme lexbuf) }
 | eof { EOF }

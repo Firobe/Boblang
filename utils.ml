@@ -1,5 +1,4 @@
 type identifier = string
-[@@deriving show]
 
 open Format
 exception SyntaxError of string
@@ -33,7 +32,8 @@ let rec pp_ttype fmt = function
   | TMacro _ -> assert false
 
 type metatype = ttype * judgement
-[@@deriving show {with_path=false}]
+
+let pp_metatype fmt (a, b) = fprintf fmt "%a %a" pp_judgement b pp_ttype a
 
 type term =
   | Unit
@@ -82,3 +82,45 @@ type command =
   | Typemacro of string * string list * ttype
   | Check of term
   | Eval of term
+
+let rec tsubstitute f t = function
+  | TUnit -> TUnit
+  | TVar id when id = f -> t
+  | (TVar _) as v -> v
+  | TArrow (tau1, tau2) -> 
+    TArrow (tsubstitute f t tau1, tsubstitute f t tau2)
+  | TComp tau -> TComp (tsubstitute f t tau)
+  | TSum (tau1, tau2) -> TSum (tsubstitute f t tau1, tsubstitute f t tau2)
+  | TProduct (tau1, tau2) -> TProduct (tsubstitute f t tau1, tsubstitute f t tau2)
+  | (TRecursive (id, _)) as r when id = f -> r
+  | TRecursive (id, tau) -> TRecursive (id, tsubstitute f t tau)
+  | TMacro (id, tl) -> TMacro (id, List.map (tsubstitute f t) tl)
+
+(* [substitute f t e] replaces variables named f in e by term t] *)
+let rec substitute f t = function
+  | Unit -> Unit
+  | Variable v when v = f -> t
+  | Variable v -> Variable v
+  | Computation c -> Computation (substitute f t c)
+  | Abstraction (_, id, _) as whole when id = f -> whole
+  | Abstraction (tt, id, a) -> Abstraction (tt, id, substitute f t a)
+  | Return r -> Return (substitute f t r)
+  | Bind (t1, id, t2) ->
+    Bind (substitute f t t1, id, if id = f then t2 else substitute f t t2)
+  | Application (t1, t2) -> Application (substitute f t t1, substitute f t t2)
+  | Right (ty, e) -> Right (ty, substitute f t e)
+  | Left (ty, e) -> Left (ty, substitute f t e)
+  | Case (e, x1, e1, x2, e2) ->
+    let e' = substitute f t e in
+    let e1' = if f = x1 then e1 else substitute f t e1 in
+    let e2' = if f = x2 then e2 else substitute f t e2 in
+    Case (e', x1, e1', x2, e2')
+  | Tuple (t1, t2) -> Tuple (substitute f t t1, substitute f t t2)
+  | Split (e1, x1, x2, e2) ->
+    let e1' = substitute f t e1 in
+    let e2' = if f = x1 || f = x2 then e2 else substitute f t e2 in
+    Split (e1', x1, x2, e2')
+  | Fold (a, e) -> Fold (a, substitute f t e)
+  | Unfold e -> Unfold (substitute f t e)
+  | Macro (id, ttl, tl) -> Macro (id, ttl, List.map (substitute f t) tl)
+

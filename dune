@@ -1,6 +1,5 @@
 (executable
     (name boblang)
-    (preprocess (pps ppx_deriving.std))
 )
 
 (menhir (modules bobgram))

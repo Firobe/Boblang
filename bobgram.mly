@@ -31,6 +31,8 @@
 %token OF
 %token RET
 %token EOF
+%token LETS
+%token STAR
 
 %start <Utils.command list> program
 
@@ -74,6 +76,9 @@ term:
     { Utils.Macro (n, l1, l2) }
 | n = MID; LEFT_PAREN; l = separated_nonempty_list(COMMA, term); RIGHT_PAREN
     { Utils.Macro (n, [], l) }
+| LEFT_PAREN; t1 = term; COMMA; t2 = term; RIGHT_PAREN { Utils.Tuple (t1, t2) }
+| LETS; LEFT_PAREN; x1 = ID; COMMA; x2 = ID; RIGHT_PAREN; EQUAL;
+    e = term; IN; ee = term { Utils.Split (e, x1, x2, ee) }
 
 typ:
 | ONE { Utils.TUnit }
@@ -84,3 +89,4 @@ typ:
 | n = ID { Utils.TVar n }
 | n = MID; LEFT_PAREN; l = separated_nonempty_list(COMMA, typ); RIGHT_PAREN
     { Utils.TMacro (n, l) }
+| LEFT_PAREN; t1 = typ; STAR; t2 = typ; RIGHT_PAREN { Utils.TProduct (t1, t2) }

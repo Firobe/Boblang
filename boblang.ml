@@ -2,19 +2,6 @@ open Utils
 
 (* STATICS *)
 
-let rec tsubstitute f t = function
-  | TUnit -> TUnit
-  | TVar id when id = f -> t
-  | (TVar _) as v -> v
-  | TArrow (tau1, tau2) -> 
-    TArrow (tsubstitute f t tau1, tsubstitute f t tau2)
-  | TComp tau -> TComp (tsubstitute f t tau)
-  | TSum (tau1, tau2) -> TSum (tsubstitute f t tau1, tsubstitute f t tau2)
-  | TProduct (tau1, tau2) -> TProduct (tsubstitute f t tau1, tsubstitute f t tau2)
-  | (TRecursive (id, _)) as r when id = f -> r
-  | TRecursive (id, tau) -> TRecursive (id, tsubstitute f t tau)
-  | TMacro (id, tl) -> TMacro (id, List.map (tsubstitute f t) tl)
-
 let typecheck =
   let rec aux env = function
   | Unit -> (TUnit, JValue)
@@ -123,34 +110,6 @@ let opb o f = match o with
   | None -> None
   | Some x -> Some (f x)
 
-(* [substitute f t e] replaces variables named f in e by term t] *)
-let rec substitute f t = function
-  | Unit -> Unit
-  | Variable v when v = f -> t
-  | Variable v -> Variable v
-  | Computation c -> Computation (substitute f t c)
-  | Abstraction (_, id, _) as whole when id = f -> whole
-  | Abstraction (tt, id, a) -> Abstraction (tt, id, substitute f t a)
-  | Return r -> Return (substitute f t r)
-  | Bind (t1, id, t2) ->
-    Bind (substitute f t t1, id, if id = f then t2 else substitute f t t2)
-  | Application (t1, t2) -> Application (substitute f t t1, substitute f t t2)
-  | Right (ty, e) -> Right (ty, substitute f t e)
-  | Left (ty, e) -> Left (ty, substitute f t e)
-  | Case (e, x1, e1, x2, e2) ->
-    let e' = substitute f t e in
-    let e1' = if f = x1 then e1 else substitute f t e1 in
-    let e2' = if f = x2 then e2 else substitute f t e2 in
-    Case (e', x1, e1', x2, e2')
-  | Tuple (t1, t2) -> Tuple (substitute f t t1, substitute f t t2)
-  | Split (e1, x1, x2, e2) ->
-    let e1' = substitute f t e1 in
-    let e2' = if f = x1 || f = x2 then e2 else substitute f t e2 in
-    Split (e1', x1, x2, e2')
-  | Fold (a, e) -> Fold (a, substitute f t e)
-  | Unfold e -> Unfold (substitute f t e)
-  | Macro (id, ttl, tl) -> Macro (id, ttl, List.map (substitute f t) tl)
-
 (* [step t] returns (Some t') where t -> t' or None if evaluation is stuck *)
 let rec step = function
   | Application (Abstraction (_, x, e1), e2) -> Some (substitute x e2 e1)
@@ -166,203 +125,13 @@ let rec step = function
   | Unfold e -> opb (step e) (fun e' -> Unfold e')
   | _ -> None
 
-(* Self-reference definitions *)
-
-let self_t tau = TRecursive("t", TArrow (TVar "t", tau))
-let self tau x e = Fold (self_t tau,
-                Abstraction(self_t tau, x, e))
-
-let name_id = ref 0
-let new_name () =
-  name_id := !name_id + 1;
-  "_" ^ (string_of_int !name_id)
-
-let unroll e = 
-  let nn = new_name () in
-  Bind (Computation (Unfold e), nn,
-        Application (Variable nn, e)
-       )
-
-let fix tau x e =
-  let nn = new_name () in
-  unroll (self tau nn (substitute x (unroll (Variable nn)) e))
-
-(* TESTING *)
-
-(* Basic PCF *)
-
-let bool_t = TSum (TUnit, TUnit)
-let btrue = Left (bool_t, Unit)
-let bfalse = Right (bool_t, Unit)
-
-let double_b = Abstraction(TArrow (bool_t, bool_t), "f",
-                Return (Abstraction(bool_t, "x",
-                    Bind(
-                        Computation (Application (Variable "f", Variable "x")),
-                        "tmp", Application (Variable "f", Variable "tmp")))))
-
-let identity = Abstraction(bool_t, "x", Return (Variable "x"))
-let flip = Abstraction(bool_t, "b",
-            Case(Variable "b", "true", Return bfalse, "false", Return btrue))
-
-let twiceid = Abstraction (bool_t, "x",
-                Bind (Computation(Application (double_b, flip)), "res",
-                      Application (Variable "res", Variable "x")))
-
-let applied = Application (twiceid, btrue)
-
-(* Recursive type, finite algorithms *)
-
-(* Int = Unit + Int *)
-let int_t = TRecursive ("t", TSum (TUnit, TVar "t"))
-let zero = Fold(int_t, Left (TSum (TUnit, int_t), Unit))
-let succ e = Fold(int_t, Right (TSum (TUnit, int_t), e))
-
-let two = succ (succ zero)
-
-let minus_one = Abstraction (int_t, "i",
-                   Bind(Computation(Unfold (Variable "i")), "x",
-                      Case(Variable "x", "zero", Return (Variable "i"),
-                           "pred", Return (Variable "pred"))))
-
-let one = Application (minus_one, two)
-
-(* Recursive function on recursive data structure *)
-
-let selft = self TUnit "id" (Return Unit)
-let unrollt = unroll selft
-let infinite = fix (TArrow (TUnit, TUnit)) "infinite"
-    (Return 
-       (Abstraction (TUnit, "_",
-                     Bind (Computation (Variable "infinite"),
-                           "rec", Application (Variable "rec", Unit)
-                          )
-                    )
-       )
-    )
-
-(* Takes an integer an doubles it *)
-let double = fix (TArrow (int_t, int_t)) "double"
-    (Return 
-       (Abstraction (int_t, "x",
-                     Bind (Computation (Unfold (Variable "x")), "x'",
-                           Case (Variable "x'", "_", Return zero,
-                                 "e", 
-                                 Bind (Computation (Variable "double"), "rec",
-                                       Bind (Computation (Application (Variable "rec",
-                                                                       Variable "e")
-                                                         ), "de",
-                                             Return (succ (succ (Variable "de")))
-                                            )
-                                      )
-                                )
-                          )
-                    )
-       )
-    )
-
-let five = succ (succ (succ (succ (succ zero))))
-(* Should return ten *)
-let apply_double =
-  Bind (Computation double, "f", Application (Variable "f", five))
-
-
 let rec eval t =
   match step t with
   | Some t' -> eval t'
   | None -> t
 
 open Format
-
-let analyse_term todo =
-  printf "@[<v>@,~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~";
-  ignore @@ eval todo;
-  printf "@,Evaluation stuck!@,@]";
-  let t = typecheck todo in
-  printf "--> Type: %a@," pp_metatype t
-
-let expand_known_types t =
-  List.fold_left (fun e (id, v) -> tsubstitute id v e) t
-
-let tyexpand_everything tyenv matyenv t =
-  let t' = expand_known_types t tyenv in
-  let rec tymapply ((f, params, r) as w) = function
-    | TUnit -> TUnit
-    | TMacro (id, tl) ->
-      let tl' = List.map (tymapply w) tl in
-      if id = f then
-        List.fold_left2 (fun a b c -> tsubstitute b c a) r params tl
-      else TMacro (id, tl')
-    | (TVar _) as v -> v
-    | TArrow (tau1, tau2) -> 
-      TArrow (tymapply w tau1, tymapply w tau2)
-    | TComp tau -> TComp (tymapply w tau)
-    | TSum (tau1, tau2) -> TSum (tymapply w tau1, tymapply w tau2)
-    | TProduct (tau1, tau2) -> TProduct (tymapply w tau1, tymapply w tau2)
-    | (TRecursive (id, _)) as r when id = f -> r
-    | TRecursive (id, tau) -> TRecursive (id, tymapply w tau)
-  in List.fold_left (fun e w -> tymapply w e) t' matyenv
-
-let expand_known_terms t =
-  List.fold_left (fun e (id, v) -> substitute id v e) t
-
-let expand_types_in_term tyenv matyenv =
-  let te = tyexpand_everything tyenv matyenv in
-  let rec aux = function
-  | Unit -> Unit
-  | (Variable _) as v -> v
-  | Computation t -> Computation (aux t)
-  | Abstraction (t, id, e) -> Abstraction (te t, id, aux e)
-  | Return t -> Return (aux t)
-  | Bind (e1, id, e2) -> Bind (aux e1, id, aux e2)
-  | Application (e1, e2) -> Application (aux e1, aux e2)
-  | Left (t, e) -> Left (te t, aux e)
-  | Right (t, e) -> Right (te t, aux e)
-  | Case (e, x1, e1, x2, e2) -> Case (aux e, x1, aux e1, x2, aux e2)
-  | Tuple (e1, e2) -> Tuple (aux e1, aux e2)
-  | Split (e, x1, x2, e') -> Split (aux e, x1, x2, aux e')
-  | Fold (t, e) -> Fold (te t, aux e)
-  | Unfold t -> Unfold (aux t)
-  | Macro (id, ttl, tl) -> Macro (id, List.map te ttl, List.map aux tl)
-  in aux
-
-
-let texpand_everything tenv tyenv matenv matyenv t =
-  let t' = expand_known_terms t tenv in
-  let rec tmapply ((f, tparams, params, r) as w) = function
-    | Macro (id, ttl, tl) ->
-      let tl' = List.map (tmapply w) tl in
-      let ttl' = List.map (tyexpand_everything tyenv matyenv) ttl in
-      if id = f then
-        if f = "SUBSTITUTE" then
-          begin match tl' with
-            | [Variable n; tot; intt] ->
-              Format.printf "Replacing %s by %a@," n pp_term tot;
-              substitute n tot intt
-            | _ -> failwith "SUBSTITUTE wrongly applied"
-          end
-        else
-        let r' = List.fold_left2 (fun a b c -> substitute b c a) r params tl' in
-        let assoc = List.map2 (fun a b -> (a, b)) tparams ttl' in
-        expand_types_in_term assoc [] r'
-      else Macro (id, ttl', tl')
-    | Unit -> Unit
-    | (Variable _) as v -> v
-    | Computation t -> Computation (tmapply w t)
-    | Abstraction (t, id, e) -> Abstraction (t, id, tmapply w e)
-    | Return t -> Return (tmapply w t)
-    | Bind (e1, id, e2) -> Bind (tmapply w e1, id, tmapply w e2)
-    | Application (e1, e2) -> Application (tmapply w e1, tmapply w e2)
-    | Left (t, e) -> Left (t, tmapply w e)
-    | Right (t, e) -> Right (t, tmapply w e)
-    | Case (e, x1, e1, x2, e2) -> Case (tmapply w e, x1, tmapply w e1, x2, tmapply w e2)
-    | Tuple (e1, e2) -> Tuple (tmapply w e1, tmapply w e2)
-    | Split (e, x1, x2, e') -> Split (tmapply w e, x1, x2, tmapply w e')
-    | Fold (t, e) -> Fold (t, tmapply w e)
-    | Unfold t -> Unfold (tmapply w t)
-  in
-  let t'' = List.fold_left (fun e w -> tmapply w e) t' matenv in
-  expand_types_in_term tyenv matyenv t''
+open Parsing
 
 let execute =
   let one tenv tyenv matenv matyenv = function
@@ -406,21 +175,6 @@ let execute =
   in 
   printf "@[<v>";
   aux [] [] [] []
-
-let print_position fmt lexbuf =
-  let open Lexing in
-  let pos = lexbuf.lex_curr_p in
-  fprintf fmt "%s:%d:%d" pos.pos_fname
-    pos.pos_lnum (pos.pos_cnum - pos.pos_bol + 1)
-
-let parse fn =
-  let inx = open_in fn in
-  let lexbuf = Lexing.from_channel inx in
-  let res = try Bobgram.program Boblex.read lexbuf
-    with Bobgram.Error -> 
-      printf "%a: syntax error\n" print_position lexbuf;
-      exit (-1)
-  in close_in inx; res
 
 let main =
   let fn = Sys.argv.(1) in
