@@ -1,72 +1,4 @@
-type identifier = string
-[@@deriving show]
-
-open Format
-
-type judgement =
-  | JValue
-  | JComp
-[@@deriving show {with_path = false}]
-
-type ttype =
-  | TUnit
-  | TArrow of ttype * ttype
-  | TComp of ttype
-  | TSum of ttype * ttype
-  | TProduct of ttype * ttype
-  | TRecursive of identifier * ttype
-  | TVar of identifier
-
-let rec pp_ttype fmt = function
-  | TUnit -> pp_print_string fmt "1"
-  | TArrow (t1, t2) -> fprintf fmt "(%a -> %a)" pp_ttype t1 pp_ttype t2
-  | TComp t -> fprintf fmt "comp(%a)" pp_ttype t
-  | TSum (t1, t2) -> fprintf fmt "(%a + %a)" pp_ttype t1 pp_ttype t2
-  | TProduct (t1, t2) -> fprintf fmt "(%a x %a)" pp_ttype t1 pp_ttype t2
-  | TRecursive (id, t) -> fprintf fmt "rec(%s, %a)" id pp_ttype t
-  | TVar s -> pp_print_string fmt s
-
-type metatype = ttype * judgement
-[@@deriving show {with_path=false}]
-
-type term =
-  | Unit
-  | Variable of identifier
-  | Computation of term
-  | Abstraction of ttype * identifier * term
-  | Return of term
-  | Bind of term * identifier * term
-  | Application of term * term
-  | Left of ttype * term
-  | Right of ttype * term
-  | Case of term * identifier * term * identifier * term
-  | Tuple of term * term
-  | Split of term * identifier * identifier * term
-  | Fold of ttype * term
-  | Unfold of term
-
-let rec pp_term fmt = function
-  | Unit -> pp_print_string fmt "()"
-  | Variable v -> pp_print_string fmt v
-  | Computation t -> fprintf fmt "@[<hv 2>comp(@,%a@]@,)" pp_term t
-  | Abstraction (t, id, e) -> fprintf fmt "@[<hv 2>λ[%a](%s,@ %a@]@,)" pp_ttype
-                                t id pp_term e
-  | Return t -> fprintf fmt "ret (%a)" pp_term t
-  | Bind (t, id, e) -> fprintf fmt "@[<hv 2>let %s =@ %a@]@ in %a" id pp_term t pp_term e
-  | Application (t1, t2) -> fprintf fmt "@[<hv 2>(@,%a@ . %a@]@,)" pp_term t1 pp_term t2
-  | Left (_, t) -> fprintf fmt "@[<hv 2>left(@,%a@]@,)"
-                     pp_term t
-  | Right (_, t) -> fprintf fmt "@[<hv 2>right(@,%a@]@,)"
-                      pp_term t
-  | Case (e, x1, e1, x2, e2) ->
-    fprintf fmt "@[<hv 2>(match@ %a with@ left(%s) ->@ %a@ right(%s) ->@ %a@]@,)"
-      pp_term e x1 pp_term e1 x2 pp_term e2
-  | Tuple (t1, t2) -> fprintf fmt "@[<hv 2><%a,@ %a@]@,>" pp_term t1 pp_term t2
-  | Split (e, x1, x2, e') ->
-    fprintf fmt "@[<hv 2>(let <%s,%s> =@ %a@ in %a@]@,)"
-      x1 x2 pp_term e pp_term e'
-  | Fold (t, e) -> fprintf fmt "@[<hv 2>fold[%a](@,%a@]@,)" pp_ttype t pp_term e
-  | Unfold e -> fprintf fmt "@[<hv 2>unfold(@,%a@]@,)" pp_term e
+open Utils
 
 (* STATICS *)
 
@@ -81,6 +13,7 @@ let rec tsubstitute f t = function
   | TProduct (tau1, tau2) -> TProduct (tsubstitute f t tau1, tsubstitute f t tau2)
   | (TRecursive (id, _)) as r when id = f -> r
   | TRecursive (id, tau) -> TRecursive (id, tsubstitute f t tau)
+  | TMacro (id, tl) -> TMacro (id, List.map (tsubstitute f t) tl)
 
 let typecheck =
   let rec aux env = function
@@ -116,7 +49,10 @@ let typecheck =
         let tau'', j = aux env e2 in
         if j = JValue then
           if tau'' = tau then (tau', JComp)
-          else failwith "Incompatible types during application"
+          else (
+            Format.printf "%a ; %a@," pp_ttype tau'' pp_ttype tau;
+            failwith "Incompatible types during application"
+          )
         else failwith "Functions only applicable to values"
       | tt -> Format.printf "%a : %a" pp_term e1 pp_metatype tt;
         failwith "Can only apply functional values"
@@ -178,6 +114,7 @@ let typecheck =
       else failwith "Good luck with that"
     else failwith "Fold expects a value"
   | Fold _ -> failwith "Fold expect a recursive type annotation"
+  | Macro _ -> assert false
   in aux []
 
 (* DYNAMICS *)
@@ -212,6 +149,7 @@ let rec substitute f t = function
     Split (e1', x1, x2, e2')
   | Fold (a, e) -> Fold (a, substitute f t e)
   | Unfold e -> Unfold (substitute f t e)
+  | Macro (id, tl) -> Macro (id, List.map (substitute f t) tl)
 
 (* [step t] returns (Some t') where t -> t' or None if evaluation is stuck *)
 let rec step = function
@@ -246,7 +184,8 @@ let unroll e =
        )
 
 let fix tau x e =
-  unroll (self tau "y" (substitute x (unroll (Variable "y")) e))
+  let nn = new_name () in
+  unroll (self tau nn (substitute x (unroll (Variable nn)) e))
 
 (* TESTING *)
 
@@ -329,10 +268,11 @@ let apply_double =
 
 
 let rec eval t =
-  Format.printf "@,===================================@,@[<hv>%a@]" pp_term t;
   match step t with
   | Some t' -> eval t'
   | None -> t
+
+open Format
 
 let analyse_term todo =
   printf "@[<v>@,~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~";
@@ -341,17 +281,91 @@ let analyse_term todo =
   let t = typecheck todo in
   printf "--> Type: %a@," pp_metatype t
 
+let expand_known_types t =
+  List.fold_left (fun e (id, v) -> tsubstitute id v e) t
 
-let _ =
-  analyse_term double_b;
-  analyse_term identity;
-  analyse_term twiceid;
-  analyse_term applied;
-  analyse_term two;
-  analyse_term minus_one;
-  analyse_term one;
-  analyse_term selft;
-  analyse_term unrollt;
-  analyse_term infinite;
-  analyse_term double;
-  analyse_term apply_double
+let tyexpand_everything tyenv _ t =
+  expand_known_types t tyenv
+
+let expand_known_terms t =
+  List.fold_left (fun e (id, v) -> substitute id v e) t
+
+let expand_types_in_term tyenv matyenv =
+  let te = tyexpand_everything tyenv matyenv in
+  let rec aux = function
+  | Unit -> Unit
+  | (Variable _) as v -> v
+  | Computation t -> Computation (aux t)
+  | Abstraction (t, id, e) -> Abstraction (te t, id, aux e)
+  | Return t -> Return (aux t)
+  | Bind (e1, id, e2) -> Bind (aux e1, id, aux e2)
+  | Application (e1, e2) -> Application (aux e1, aux e2)
+  | Left (t, e) -> Left (te t, aux e)
+  | Right (t, e) -> Right (te t, aux e)
+  | Case (e, x1, e1, x2, e2) -> Case (aux e, x1, aux e1, x2, aux e2)
+  | Tuple (e1, e2) -> Tuple (aux e1, aux e2)
+  | Split (e, x1, x2, e') -> Split (aux e, x1, x2, aux e')
+  | Fold (t, e) -> Fold (te t, aux e)
+  | Unfold t -> Unfold (aux t)
+  | Macro (id, tl) -> Macro (id, List.map aux tl)
+  in aux
+
+
+let texpand_everything tenv tyenv _ matyenv t =
+  let t' = expand_known_terms t tenv in
+  expand_types_in_term tyenv matyenv t'
+
+let execute =
+  let one tenv tyenv matenv matyenv = function
+    | Declare (n, t) ->
+      let t' = texpand_everything tenv tyenv matenv matyenv t in
+      let tau, j = typecheck t' in
+      printf "%a %s : %a@," pp_judgement j n pp_ttype tau;
+      (n, t') :: tenv, tyenv, matenv, matyenv
+    | Type (n, t) ->
+      let t' = tyexpand_everything tyenv matyenv t in
+      printf "type %s : %a@," n pp_ttype t';
+      tenv, (n, t') :: tyenv, matenv, matyenv
+    | DeclareMacro _ -> assert false
+    | Typemacro _ -> assert false
+    | Check t ->
+      let t' = texpand_everything tenv tyenv matenv matyenv t in
+      let r = typecheck t' in
+      printf "check -> %a@," pp_metatype r;
+      tenv, tyenv, matenv, matyenv
+    | Eval t ->
+      let t' = texpand_everything tenv tyenv matenv matyenv t in
+      let tau, j = typecheck t' in
+      let r = eval t' in
+      printf "eval -> %a %a =@,%a@," pp_judgement j pp_ttype tau pp_term r;
+      tenv, tyenv, matenv, matyenv
+  in
+  let rec aux tenv tyenv matenv matyenv = function
+    | [] -> printf "Done, bye!@,@]"
+    | h :: t ->
+      let tenv', tyenv', matenv', matyenv' = one tenv tyenv matenv matyenv h in
+      printf "@,";
+      aux tenv' tyenv' matenv' matyenv' t
+  in 
+  printf "@[<v>";
+  aux [] [] [] []
+
+let print_position fmt lexbuf =
+  let open Lexing in
+  let pos = lexbuf.lex_curr_p in
+  fprintf fmt "%s:%d:%d" pos.pos_fname
+    pos.pos_lnum (pos.pos_cnum - pos.pos_bol + 1)
+
+let parse fn =
+  let inx = open_in fn in
+  let lexbuf = Lexing.from_channel inx in
+  let res = try Bobgram.program Boblex.read lexbuf
+    with Bobgram.Error -> 
+      printf "%a: syntax error\n" print_position lexbuf;
+      exit (-1)
+  in close_in inx; res
+
+let main =
+  let fn = Sys.argv.(1) in
+  let program = parse fn in
+  execute program
