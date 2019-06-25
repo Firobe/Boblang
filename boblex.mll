@@ -1,12 +1,20 @@
 {
     open Bobgram
+    open Lexing
+    let next_line lexbuf =
+      let pos = lexbuf.lex_curr_p in
+      lexbuf.lex_curr_p <-
+        { pos with pos_bol = lexbuf.lex_curr_pos;
+                   pos_lnum = pos.pos_lnum + 1
+        }
 }
-let white = [' ' '\t' '\n']+
+let white = [' ' '\t']+
 let stext = ['a'-'z' '_']['a'-'z' '_' '0'-'9' '\'']*
 let ctext = ['A'-'Z']['A'-'Z' '_' '0'-'9' '\'']*
 
 rule read = parse
 | white { read lexbuf }
+| '\n' { next_line lexbuf; read lexbuf }
 | "(*" { comment lexbuf }
 | "Type" { TYPE }
 | "Declare" { DECLARE }

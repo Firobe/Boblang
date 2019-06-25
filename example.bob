@@ -23,6 +23,15 @@ Declare minus_one = fun (i : nat) ->
 
 Eval letr twu = two in (minus_one . twu)
 
+(* A boring recursive function (do not eval!) *)
+Declare infinite = FIX[(1 -> 1)](infinite,
+    ret( fun (_ : 1) ->
+            letr f = comp(infinite) in
+            (f . ())
+    )
+)
+
+
 (* An exciting recursive function ! *)
 Declare double = FIX[(nat -> nat)](double,
  ret (fun (x : nat) ->
@@ -37,7 +46,7 @@ Declare double = FIX[(nat -> nat)](double,
              ret (doubled'')
   ))
 
-Check double
+Check ())
 
 (* Wow, 2 * 2 = 4 *)
 Eval
