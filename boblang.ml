@@ -17,7 +17,10 @@ let typecheck =
   | Abstraction (tau, id, t) ->
     let tau', j = aux ((id, tau) :: env) t in
     if j = JComp then (TArrow (tau, tau'), JValue)
-    else failwith "Abstractions should return computations"
+    else (
+      Format.printf "Culprit is %s@," id;
+      failwith "Abstractions should return computations"
+    )
   | Return t ->
     let tau, j = aux env t in
     if j = JValue then (tau, JComp)
@@ -37,7 +40,8 @@ let typecheck =
         if j = JValue then
           if tau'' = tau then (tau', JComp)
           else (
-            Format.printf "%a ; %a@," pp_ttype tau'' pp_ttype tau;
+            Format.printf "%a ; %a@,f was %a@," pp_ttype tau'' pp_ttype tau
+              pp_term e1;
             failwith "Incompatible types during application"
           )
         else failwith "Functions only applicable to values"
@@ -98,7 +102,11 @@ let typecheck =
     if j = JValue then
       if tau' = tsubstitute id rect tau
       then rect, JValue
-      else failwith "Good luck with that"
+      else (
+        Format.printf "Fold types do not correspond:@,%a@,and@,%a@,"
+          pp_ttype tau' pp_ttype (tsubstitute id rect tau);
+        failwith "Good luck with that"
+      )
     else failwith "Fold expects a value"
   | Fold _ -> failwith "Fold expect a recursive type annotation"
   | Macro (n, _, _) -> failwith ("Macro " ^ n ^ " not expanded")

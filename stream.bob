@@ -1,0 +1,140 @@
+(* ================ RECURSION ==================== *)
+
+Typemacro SELF tau = rec(t, (t -> tau))
+Macro SELF [tau] expr = fold[SELF(tau)](fun (tmp : SELF(tau)) -> expr)
+Macro UNROLL g =
+     letr unf = comp(unfold(g)) in
+     (unf . g)
+Macro FIX [tau] x e =
+     UNROLL(SELF[tau](SUBSTITUTE(x, UNROLL(tmp), e)))
+
+(* ================== NAT ====================== *)
+
+Type nat = rec(t, (1 + t))
+Declare zero = fold[nat](left[(1 + nat)](()))
+Declare succ = fun (x : nat) -> ret (fold[nat](right[(1 + nat)](x)))
+
+(* ================== BOOL ====================== *)
+
+Type bool = (1 + 1)
+Declare true = left[bool]( () )
+Declare false = right[bool]( () )
+
+Declare flip = fun (x : bool) ->
+    case x of
+        left(_) (* true *) -> ret (false) (* lambdas should return computations *)
+        right(_) (* false *) -> ret (true)
+
+(* ================ BOOL LIST ================ *)
+
+Type blist = rec(t, (1 + (bool * t)))
+Declare nil = fold[blist](left[(1 + (bool * blist))](()))
+Declare cons =
+    fun (x : bool) -> ret (
+        fun (l : blist) -> ret (
+            fold[blist](right[(1 + (bool * blist))]((x ,l)))
+        )
+    )
+
+(* ================ STREAMS ==================== *)
+
+Type stream = rec(t, (bool * comp(t)))
+Declare push =
+    fun (x : bool) -> ret (
+        fun (s : comp(stream)) -> ret (
+            fold[stream]((x, s))
+        )
+    )
+
+Declare take = FIX[(nat -> (stream -> blist))](take,
+ret(
+    fun (n : nat) -> ret (
+        fun (s : stream) ->
+            letr n' = comp(unfold(n)) in
+            case n' of
+                left(_) -> ret(nil)
+                right(e) ->
+                    letr s' = comp(unfold(s)) in
+                    lets (x, rest) = s' in
+                    letr f = comp(take) in
+                    letr f' = comp((f . e)) in
+                    letr rrest = rest in
+                    letr res = comp((f' . rrest)) in
+                    letr c' = comp((cons . x)) in
+                    (c' . res)
+        )
+    )
+)
+
+Declare zeros = FIX[stream](zeros,
+    letr p' = comp((push . false)) in
+    (p' . comp(zeros)) 
+)
+
+Declare map = FIX[((bool -> bool) -> (stream -> stream))](map,
+ret(
+    fun (f : (bool -> bool)) -> ret(
+        fun (s : stream) ->
+            letr s' = comp(unfold(s)) in
+            lets (x, rest) = s' in
+            letr rest' = rest in
+            letr fapp = comp((f . x)) in
+            letr frec = comp(map) in
+            letr frec' = comp((frec . f)) in
+            letr push' = comp((push . fapp)) in
+            (push' . comp((frec' . rest')))
+    )
+))
+
+Declare merge = FIX[(stream -> (stream -> stream))](merge,
+ret (
+    fun (s1 : stream) -> ret (
+        fun (s2 : stream) ->
+            letr s1' = comp(unfold(s1)) in
+            letr s2' = comp(unfold(s2)) in
+            lets (x1, rest1) = s1' in
+            lets (x2, rest2) = s2' in
+            letr rest1' = rest1 in
+            letr rest2' = rest2 in
+            letr frec = comp(merge) in
+            letr frec' = comp((frec . rest1')) in
+            letr push' = comp((push . x2)) in
+            letr push''' = comp((push . x1)) in
+            (push''' . comp((push' . comp((frec' . rest2')))))
+    )
+))
+
+(* ========================= TESTING ======================== *)
+
+Declare one = (succ . zero)
+Declare two = letr one' = comp(one) in (succ . one')
+
+Macro TAKETWO s =
+    letr f = comp(take) in
+    letr two' = comp(two) in
+    letr f' = comp((f. two')) in
+    letr z' = comp(s) in
+    (f' . z')
+
+(* take 2 zeros *)
+Eval TAKETWO(zeros)
+
+(* map flip on zeros *)
+Declare ones =
+    letr map' = comp(map) in
+    letr zeros' = comp(zeros) in
+    letr f' = comp((map' . flip)) in
+    (f' . zeros')
+
+(* take 2 ones *)
+Eval TAKETWO(ones)
+
+Declare alternating =
+    letr merge' = comp(merge) in
+    letr zeros' = comp(zeros) in
+    letr ones' = comp(ones) in
+    letr app = comp((merge' . zeros')) in
+    (app . ones')
+
+(* take 2 alternating *)
+Eval TAKETWO(alternating)
