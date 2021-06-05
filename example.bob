@@ -11,7 +11,7 @@ Eval true
 
 Declare flip = fun (x : bool) ->
     case x of
-        left(_) (* true *) -> ret (false) (* lambdas should return computations *)
+        left(_) (* true *) -> ret (false) (* lambdas should return lazyutations *)
         right(_) (* false *) -> ret (true)
 
 Eval (flip . true)
@@ -20,11 +20,11 @@ Eval false
 Declare apply_twice =
     fun (f : (bool -> bool)) -> ret(
         fun (x : bool) ->
-            (* The result of an application is a computation,
-             * so we need to wrap it in a comp and
-             * bind it with letr to get the value
+            (* The result of an application is a lazyutation,
+             * so we need to wrap it in a lazy and
+             * bind it with let* to get the value
              *)
-            letr once = comp((f . x)) in
+            let* once = (f . x) in
             (f . once)
     )
 
@@ -32,7 +32,7 @@ Declare apply_twice =
 Check (apply_twice . flip)
 
 Eval
-    letr double_flip = comp((apply_twice . flip)) in
+    let* double_flip = (apply_twice . flip) in
     (double_flip . true)
 
 (* Natural numbers definition using a recursive type *)
@@ -41,15 +41,15 @@ Declare zero = fold[nat](left[(1 + nat)](()))
 Declare succ = fun (x : nat) -> ret (fold[nat](right[(1 + nat)](x)))
 
 (* Some testing *)
-Declare two = comp( letr one = comp((succ . zero)) in (succ . one))
+Declare two = let* one = (succ . zero) in (succ . one)
 
 Declare minus_one = fun (i : nat) ->
-     letr unpacked = comp(unfold(i)) in
+     let* unpacked = unfold(i) in
      case unpacked of
          left(_) -> ret(zero)
          right(pred) -> ret(pred)
 
-Eval letr twu = two in (minus_one . twu)
+Eval let* two' = two in (minus_one . two')
 
 (*** Definition of a fixpoint operator as a macro ***)
 
@@ -61,7 +61,7 @@ Macro SELF [tau] expr = fold[SELF(tau)](fun (tmp : SELF(tau)) -> expr)
 
 (* All macro names must be in CAPITAL LETTERS *)
 Macro UNROLL g =
-     letr unf = comp(unfold(g)) in
+     let* unf = unfold(g) in
      (unf . g)
 
 (* SUBSTITUTE(f,t,e) is a built-in macro substituting f by t in e *)
@@ -72,7 +72,7 @@ Macro FIX [tau] x e =
 (* A boring recursive function (eval it if you dare) *)
 Declare infinite = FIX[(1 -> 1)](infinite,
     ret( fun (_ : 1) ->
-            letr f = comp(infinite) in
+            let* f = infinite in
             (f . ())
     )
 )
@@ -80,44 +80,44 @@ Declare infinite = FIX[(1 -> 1)](infinite,
 (* An exciting recursive function ! *)
 Declare double = FIX[(nat -> nat)](double,
  ret (fun (x : nat) ->
-     letr x' = comp(unfold(x)) in
+     let* x' = unfold(x) in
      case x' of
          left(_) -> ret(zero)
          right(e) ->
-             letr frec = comp(double) in
-             letr doubled = comp((frec . e)) in
-             letr doubled' = comp((succ . doubled)) in
-             letr doubled'' = comp((succ . doubled')) in
+             let* frec = double in
+             let* doubled = (frec . e) in
+             let* doubled' = (succ . doubled) in
+             let* doubled'' = (succ . doubled') in
              ret (doubled'')
   ))
 
 (* Wow, 2 * 2 = 4 *)
 Eval
-    letr twu = two in
-    letr f = comp(double) in (f . twu)
+    let* two' = two in
+    let* f = double in (f . two')
 
 (* We can effectively simulate call by name *)
 
-(* Define an IF for branches returning suspended unit computations *)
+(* Define an IF for branches returning suspended unit lazyutations *)
 Declare if_unit =
     fun (b : bool) -> ret (
-    fun (e1 : comp(1)) -> ret (
-    fun (e2 : comp(1)) -> 
+    fun (e1 : lazy(1)) -> ret (
+    fun (e2 : lazy(1)) -> 
         case b of
-            left(l) -> letr r = e1 in ret (r)
-            right(r) -> letr r = e2 in ret (r)
+            left(l) -> let* res = force(e1) in ret (res)
+            right(r) -> let* res = force(e2) in ret (res)
     ))
 
 (* A easier syntax for applicating it and automatically suspending
- * the computations of the parameters *)
+ * the lazyutations of the parameters *)
 Macro IF_UNIT b e1 e2 =
-    letr if' = comp((if_unit . b)) in
-    letr if'' = comp((if' . comp(e1))) in
-    (if'' . comp(e2))
+    let* if' = (if_unit . b) in
+    let* if'' = (if' . lazy(e1)) in
+    (if'' . lazy(e2))
 
 (* The infinite branch is not evaluated (try replacing false by true *)
 Eval
     IF_UNIT(false,
-        letr f = comp(infinite) in (f. ()),
+        let* f = infinite in (f. ()),
         ret(())
     )

@@ -13,7 +13,7 @@ let typecheck =
   | Computation t ->
     let tau, j = aux env t in
     if j = JComp then (TComp tau, JValue)
-    else failwith "comp() expects a computation"
+    else failwith "lazy() expects a computation"
   | Abstraction (tau, id, t) ->
     let tau', j = aux ((id, tau) :: env) t in
     if j = JComp then (TArrow (tau, tau'), JValue)
@@ -25,14 +25,18 @@ let typecheck =
     let tau, j = aux env t in
     if j = JValue then (tau, JComp)
     else failwith "Only values can be returned"
+  | Force t ->
+    begin match aux env t with
+      | TComp tau, JValue -> (tau, JComp)
+      | _ -> failwith "Force should be on a lazy type"
+    end
   | Bind (e1, id, e2) ->
-    begin match aux env e1 with
-      | TComp tau, JValue ->
-        let tau', j' = aux ((id, tau) :: env) e2 in
+    let tau, j = aux env e1 in
+    if j = JComp then
+      let tau', j' = aux ((id, tau) :: env) e2 in
         if j' = JComp then (tau', JComp)
         else failwith "Bind should return a computation"
-      | _ -> failwith "Bind should be on a comp()"
-    end
+    else failwith "Bind should of on computations"
   | Application (e1, e2) ->
     begin match aux env e1 with
       | TArrow (tau, tau'), JValue ->
@@ -114,23 +118,21 @@ let typecheck =
 
 (* DYNAMICS *)
 
-let opb o f = match o with
-  | None -> None
-  | Some x -> Some (f x)
+let (let*) = Option.bind
 
 (* [step t] returns (Some t') where t -> t' or None if evaluation is stuck *)
 let rec step = function
   | Application (Abstraction (_, x, e1), e2) -> Some (substitute x e2 e1)
-  | Bind (Computation (Return v), x, e) -> Some (substitute x v e)
-  | Bind (Computation e, x, e2) ->
-    opb (step e) (fun e' -> Bind (Computation e', x, e2))
+  | Bind (Return v, x, e2) -> Some (substitute x v e2)
+  | Bind (e1, x, e2) -> let* e' = step e1 in Some (Bind (e', x, e2))
+  | Force (Computation e) -> Some e
   | Case (Left (_, v), x, e, _, _) -> Some (substitute x v e)
   | Case (Right (_, v), _, _, x, e) -> Some (substitute x v e)
   | Case (e, x1, e1, x2, e2) ->
-    opb (step e) (fun e' -> Case (e', x1, e1, x2, e2))
+    let* e' = step e in Some(Case (e', x1, e1, x2, e2))
   | Split (Tuple (a, b), x1, x2, e) -> Some (substitute x1 a (substitute x2 b e))
   | Unfold (Fold ( _, e)) -> Some (Return e)
-  | Unfold e -> opb (step e) (fun e' -> Unfold e')
+  | Unfold e -> let* e' = step e in Some(Unfold e')
   | _ -> None
 
 let rec eval t =

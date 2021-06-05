@@ -18,6 +18,7 @@
 %token LEFT_BRACKET
 %token RIGHT_BRACKET
 %token LEFT
+%token FORCE
 %token RIGHT
 %token FOLD
 %token REC
@@ -56,6 +57,7 @@ term:
 | FUN; LEFT_PAREN; x = ID; COLON; tau = typ; RIGHT_PAREN; ARROW; t = term
     { Utils.Abstraction (tau, x, t) }
 | RET; LEFT_PAREN; t = term; RIGHT_PAREN { Utils.Return t }
+| FORCE; LEFT_PAREN; t = term; RIGHT_PAREN { Utils.Force t }
 | LETR; x = ID; EQUAL; e1 = term; IN; e2 = term
     { Utils.Bind (e1, x, e2) }
 | LEFT_PAREN; t1 = term; POINT; t2 = term; RIGHT_PAREN

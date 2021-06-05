@@ -24,7 +24,7 @@ type ttype =
 let rec pp_ttype fmt = function
   | TUnit -> pp_print_string fmt "1"
   | TArrow (t1, t2) -> fprintf fmt "(%a -> %a)" pp_ttype t1 pp_ttype t2
-  | TComp t -> fprintf fmt "comp(%a)" pp_ttype t
+  | TComp t -> fprintf fmt "lazy(%a)" pp_ttype t
   | TSum (t1, t2) -> fprintf fmt "(%a + %a)" pp_ttype t1 pp_ttype t2
   | TProduct (t1, t2) -> fprintf fmt "(%a x %a)" pp_ttype t1 pp_ttype t2
   | TRecursive (id, t) -> fprintf fmt "rec(%s, %a)" id pp_ttype t
@@ -43,6 +43,7 @@ type term =
   | Return of term
   | Bind of term * identifier * term
   | Application of term * term
+  | Force of term
   | Left of ttype * term
   | Right of ttype * term
   | Case of term * identifier * term * identifier * term
@@ -55,11 +56,12 @@ type term =
 let rec pp_term fmt = function
   | Unit -> pp_print_string fmt "()"
   | Variable v -> pp_print_string fmt v
-  | Computation t -> fprintf fmt "@[<hv 2>comp(@,%a@]@,)" pp_term t
+  | Computation t -> fprintf fmt "@[<hv 2>lazy(@,%a@]@,)" pp_term t
   | Abstraction (_, id, e) -> fprintf fmt "@[<hv 2>λ(%s,@ %a@]@,)" id pp_term e
   | Return t -> fprintf fmt "ret (%a)" pp_term t
   | Bind (t, id, e) -> fprintf fmt "@[<hv 2>let %s =@ %a@]@ in %a" id pp_term t pp_term e
   | Application (t1, t2) -> fprintf fmt "@[<hv 2>(@,%a@ . %a@]@,)" pp_term t1 pp_term t2
+  | Force t -> fprintf fmt "force (%a)" pp_term t
   | Left (_, t) -> fprintf fmt "@[<hv 2>left(@,%a@]@,)"
                      pp_term t
   | Right (_, t) -> fprintf fmt "@[<hv 2>right(@,%a@]@,)"
@@ -105,6 +107,7 @@ let rec substitute f t = function
   | Abstraction (_, id, _) as whole when id = f -> whole
   | Abstraction (tt, id, a) -> Abstraction (tt, id, substitute f t a)
   | Return r -> Return (substitute f t r)
+  | Force r -> Force (substitute f t r)
   | Bind (t1, id, t2) ->
     Bind (substitute f t t1, id, if id = f then t2 else substitute f t t2)
   | Application (t1, t2) -> Application (substitute f t t1, substitute f t t2)

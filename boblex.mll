@@ -39,8 +39,9 @@ rule read = parse
 | "rec" { REC }
 | "fun" { FUN }
 | ':' { COLON }
-| "comp" { COMP }
-| "letr" { LETR }
+| "lazy" { COMP }
+| "let*" { LETR }
+| "force" { FORCE }
 | "in" { IN }
 | "unfold" { UNFOLD }
 | "case" { CASE }
