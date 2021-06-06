@@ -60,7 +60,7 @@ term:
 | FORCE; LEFT_PAREN; t = term; RIGHT_PAREN { Utils.Force t }
 | LETR; x = ID; EQUAL; e1 = term; IN; e2 = term
     { Utils.Bind (e1, x, e2) }
-| LEFT_PAREN; t1 = term; POINT; t2 = term; RIGHT_PAREN
+| t1 = term; POINT; t2 = term 
     { Utils.Application (t1, t2) }
 | LEFT; LEFT_BRACKET; t = typ; RIGHT_BRACKET; LEFT_PAREN; e = term; RIGHT_PAREN
     { Utils.Left (t, e) }
@@ -81,6 +81,7 @@ term:
 | LEFT_PAREN; t1 = term; COMMA; t2 = term; RIGHT_PAREN { Utils.Tuple (t1, t2) }
 | LETS; LEFT_PAREN; x1 = ID; COMMA; x2 = ID; RIGHT_PAREN; EQUAL;
     e = term; IN; ee = term { Utils.Split (e, x1, x2, ee) }
+| LEFT_PAREN; t = term; RIGHT_PAREN { t }
 
 typ:
 | ONE { Utils.TUnit }

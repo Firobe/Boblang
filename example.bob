@@ -17,6 +17,8 @@ Declare flip = fun (x : bool) ->
 Eval (flip . true)
 Eval false
 
+Macro C e v = let* _ = v in e
+
 Declare apply_twice =
     fun (f : (bool -> bool)) -> ret(
         fun (x : bool) ->
@@ -24,8 +26,7 @@ Declare apply_twice =
              * so we need to wrap it in a lazy and
              * bind it with let* to get the value
              *)
-            let* once = (f . x) in
-            (f . once)
+            C(f . _, f . x)
     )
 
 (* Display the type of an expression *)
@@ -49,7 +50,7 @@ Declare minus_one = fun (i : nat) ->
          left(_) -> ret(zero)
          right(pred) -> ret(pred)
 
-Eval let* two' = two in (minus_one . two')
+Eval C(minus_one . _, two)
 
 (*** Definition of a fixpoint operator as a macro ***)
 
@@ -72,8 +73,7 @@ Macro FIX [tau] x e =
 (* A boring recursive function (eval it if you dare) *)
 Declare infinite = FIX[(1 -> 1)](infinite,
     ret( fun (_ : 1) ->
-            let* f = infinite in
-            (f . ())
+        C(_ . (), infinite)
     )
 )
 
@@ -84,17 +84,14 @@ Declare double = FIX[(nat -> nat)](double,
      case x' of
          left(_) -> ret(zero)
          right(e) ->
-             let* frec = double in
-             let* doubled = (frec . e) in
-             let* doubled' = (succ . doubled) in
-             let* doubled'' = (succ . doubled') in
-             ret (doubled'')
+            C(succ . _, C(succ . _, C(_ . e, double)))
   ))
 
 (* Wow, 2 * 2 = 4 *)
 Eval
     let* two' = two in
-    let* f = double in (f . two')
+    let* f = double in
+    (f . two')
 
 (* We can effectively simulate call by name *)
 
@@ -104,20 +101,18 @@ Declare if_unit =
     fun (e1 : lazy(1)) -> ret (
     fun (e2 : lazy(1)) -> 
         case b of
-            left(l) -> let* res = force(e1) in ret (res)
-            right(r) -> let* res = force(e2) in ret (res)
+            left(l) -> force(e1)
+            right(r) -> force(e2)
     ))
 
 (* A easier syntax for applicating it and automatically suspending
  * the lazyutations of the parameters *)
 Macro IF_UNIT b e1 e2 =
-    let* if' = (if_unit . b) in
-    let* if'' = (if' . lazy(e1)) in
-    (if'' . lazy(e2))
+    C(_ . lazy(e2), C(_ . lazy(e1), if_unit . b))
 
 (* The infinite branch is not evaluated (try replacing false by true *)
 Eval
     IF_UNIT(false,
-        let* f = infinite in (f. ()),
+        C(_ . (), infinite),
         ret(())
     )

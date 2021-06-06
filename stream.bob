@@ -1,3 +1,5 @@
+Macro C e v = let* _ = v in e (* EASY CHAINING *)
+
 (* ================ RECURSION ==================== *)
 
 Typemacro SELF tau = rec(t, (t -> tau))
@@ -22,7 +24,7 @@ Declare false = right[bool]( () )
 
 Declare flip = fun (x : bool) ->
     case x of
-        left(_) (* true *) -> ret (false) (* lambdas should return lazyutations *)
+        left(_) (* true *) -> ret (false) (* lambdas should return computations *)
         right(_) (* false *) -> ret (true)
 
 (* ================ BOOL LIST ================ *)
@@ -45,6 +47,11 @@ Declare push =
             fold[stream]((x, s))
         )
     )
+Declare pop = fun (s : stream) ->
+    let* c = unfold(s) in
+    lets (x, rest) = c in
+    let* next = force(rest) in
+    ret((x, next))
 
 Declare take = FIX[(nat -> (stream -> blist))](take,
 ret(
@@ -54,35 +61,27 @@ ret(
             case n' of
                 left(_) -> ret(nil)
                 right(e) ->
-                    let* s' = unfold(s) in
+                    let* s' = pop . s in
                     lets (x, rest) = s' in
-                    let* f = take in
-                    let* f' = (f . e) in
-                    let* rrest = force(rest) in
-                    let* res = (f' . rrest) in
-                    let* c' = (cons . x) in
-                    (c' . res)
+                    let* res = C(_ . rest, C(_ . e, take)) in
+                    C(_ . res, (cons . x))
         )
     )
 )
 
 Declare zeros = FIX[stream](zeros,
-    let* p' = (push . false) in
-    (p' . lazy(zeros)) 
+    C(_ . lazy(zeros), push . false)
 )
 
 Declare map = FIX[((bool -> bool) -> (stream -> stream))](map,
 ret(
     fun (f : (bool -> bool)) -> ret(
         fun (s : stream) ->
-            let* s' = unfold(s) in
+            let* s' = pop . s in
             lets (x, rest) = s' in
-            let* rest' = force(rest) in
-            let* fapp = (f . x) in
-            let* frec = map in
-            let* frec' = (frec . f) in
-            let* push' = (push . fapp) in
-            (push' . lazy((frec' . rest')))
+            let* rec_map = C(_ . f, map) in
+            let* push_new = C(push . _, f . x) in
+            (push_new . lazy((rec_map . rest)))
     )
 ))
 
@@ -90,51 +89,42 @@ Declare merge = FIX[(stream -> (stream -> stream))](merge,
 ret (
     fun (s1 : stream) -> ret (
         fun (s2 : stream) ->
-            let* s1' = unfold(s1) in
-            let* s2' = unfold(s2) in
+            let* s1' = pop . s1 in
+            let* s2' = pop . s2 in
             lets (x1, rest1) = s1' in
             lets (x2, rest2) = s2' in
-            let* rest1' = force(rest1) in
-            let* rest2' = force(rest2) in
-            let* frec = merge in
-            let* frec' = (frec . rest1') in
+            let* frec' = C(_ . rest1, merge) in
             let* push' = (push . x2) in
             let* push''' = (push . x1) in
-            (push''' . lazy((push' . lazy((frec' . rest2')))))
+            (push''' . lazy((push' . lazy((frec' . rest2)))))
     )
 ))
 
 (* ========================= TESTING ======================== *)
 
 Declare one = (succ . zero)
-Declare two = let* one' = one in (succ . one')
+Declare two = C(succ . _, one)
 
 Macro TAKETWO s =
-    let* f = take in
     let* two' = two in
-    let* f' = (f. two') in
-    let* z' = s in
-    (f' . z')
+    let* f' = C(_ . two', take) in
+    C(f' . _, s)
 
 (* take 2 zeros *)
 Eval TAKETWO(zeros)
 
 (* map flip on zeros *)
 Declare ones =
-    let* map' = map in
     let* zeros' = zeros in
-    let* f' = (map' . flip) in
-    (f' . zeros')
+    C(_ . zeros', C(_ . flip, map))
 
 (* take 2 ones *)
 Eval TAKETWO(ones)
 
 Declare alternating =
-    let* merge' = merge in
     let* zeros' = zeros in
     let* ones' = ones in
-    let* app = (merge' . zeros') in
-    (app . ones')
+    C(_ . ones', C(_ . zeros', merge))
 
 (* take 2 alternating *)
 Eval TAKETWO(alternating)
