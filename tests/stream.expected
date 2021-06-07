@@ -1,0 +1,67 @@
+Macro C registered
+
+Typemacro SELF registered
+
+Macro SELF registered
+
+Macro UNROLL registered
+
+Macro FIX registered
+
+type nat : rec(t, (1 + t))
+
+val zero : rec(t, (1 + t))
+
+val succ : (rec(t, (1 + t)) -> rec(t, (1 + t)))
+
+type bool : (1 + 1)
+
+val true : (1 + 1)
+
+val false : (1 + 1)
+
+val flip : ((1 + 1) -> (1 + 1))
+
+type blist : rec(t, (1 + ((1 + 1) x t)))
+
+val nil : rec(t, (1 + ((1 + 1) x t)))
+
+val cons : ((1 + 1) -> (rec(t, (1 + ((1 + 1) x t))) -> rec(t, (1 + ((1 + 1) x t)))))
+
+type stream : rec(t, ((1 + 1) x lazy(t)))
+
+val push : ((1 + 1) -> (lazy(rec(t, ((1 + 1) x lazy(t)))) -> rec(t, ((1 + 1) x lazy(t)))))
+
+val pop : (rec(t, ((1 + 1) x lazy(t))) -> ((1 + 1) x rec(t, ((1 + 1) x lazy(t)))))
+
+comput take : (rec(t, (1 + t)) -> (rec(t, ((1 + 1) x lazy(t))) -> rec(t, (1 + ((1 + 1) x t)))))
+
+comput zeros : rec(t, ((1 + 1) x lazy(t)))
+
+comput map : (((1 + 1) -> (1 + 1)) -> (rec(t, ((1 + 1) x lazy(t))) -> rec(t, ((1 + 1) x lazy(t)))))
+
+comput merge : (rec(t, ((1 + 1) x lazy(t))) -> (rec(t, ((1 + 1) x lazy(t))) -> rec(t, ((1 + 1) x lazy(t)))))
+
+comput one : rec(t, (1 + t))
+
+comput two : rec(t, (1 + t))
+
+Macro TAKETWO registered
+
+eval -> comput rec(t, (1 + ((1 + 1) x t))) =
+ret (fold(right(<right(()), fold(right(<right(()), fold(left(()))>))>)
+))
+
+comput ones : rec(t, ((1 + 1) x lazy(t)))
+
+eval -> comput rec(t, (1 + ((1 + 1) x t))) =
+ret (fold(right(<left(()), fold(right(<left(()), fold(left(()))>))>)
+))
+
+comput alternating : rec(t, ((1 + 1) x lazy(t)))
+
+eval -> comput rec(t, (1 + ((1 + 1) x t))) =
+ret (fold(right(<right(()), fold(right(<left(()), fold(left(()))>))>)
+))
+
+Done, bye!
