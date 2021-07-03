@@ -52,6 +52,7 @@ type term =
   | Fold of ttype * term
   | Unfold of term
   | Macro of identifier * ttype list * term list
+  | Print_char of term
 
 let rec pp_term fmt = function
   | Unit -> pp_print_string fmt "()"
@@ -75,7 +76,8 @@ let rec pp_term fmt = function
       x1 x2 pp_term e pp_term e'
   | Fold (_, e) -> fprintf fmt "@[<hv 2>fold(@,%a@]@,)" pp_term e
   | Unfold e -> fprintf fmt "@[<hv 2>unfold(@,%a@]@,)" pp_term e
-  | Macro _ -> assert false
+  | Macro _ -> failwith "Cannot print macro"
+  | Print_char e -> fprintf fmt "print(%a)" pp_term e
 
 type command =
   | Declare of string * term
@@ -126,4 +128,13 @@ let rec substitute f t = function
   | Fold (a, e) -> Fold (a, substitute f t e)
   | Unfold e -> Unfold (substitute f t e)
   | Macro (id, ttl, tl) -> Macro (id, ttl, List.map (substitute f t) tl)
+  | Print_char e -> Print_char (substitute f t e)
 
+let rec int_of_term = function
+  | Fold (_, Right(_, next)) -> 1 + int_of_term next
+  | Fold (_, Left(_, Unit)) -> 0
+  | _ -> failwith "int_of_term got wrong structure"
+
+let print_char_term e =
+  let i = (int_of_term e) mod 256 in
+  Printf.printf "%c%!" (Char.chr i)

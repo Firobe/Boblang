@@ -30,13 +30,13 @@ ret (left(()
 
 type nat : rec(t, (1 + t))
 
-val zero : rec(t, (1 + t))
+val 0 : rec(t, (1 + t))
 
 val succ : (rec(t, (1 + t)) -> rec(t, (1 + t)))
 
-comput two : rec(t, (1 + t))
+comput 2 : rec(t, (1 + t))
 
-val minus_one : (rec(t, (1 + t)) -> rec(t, (1 + t)))
+val minus_1 : (rec(t, (1 + t)) -> rec(t, (1 + t)))
 
 eval -> comput rec(t, (1 + t)) =
 ret (fold(right(fold(left(())))

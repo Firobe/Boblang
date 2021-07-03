@@ -2,7 +2,7 @@
     (name boblang)
 )
 
-(menhir (modules bobgram))
+(menhir (modules bobgram) (flags --explain))
 (ocamllex boblex)
 
 (rule

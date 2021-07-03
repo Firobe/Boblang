@@ -10,7 +10,7 @@
 %token PLUS
 %token ONE
 %token UNIT
-%token POINT
+(*%token POINT*)
 %token EQUAL
 %token LEFT_PAREN
 %token RIGHT_PAREN
@@ -34,6 +34,7 @@
 %token EOF
 %token LETS
 %token STAR
+%token PRINT
 
 %start <Utils.command list> program
 
@@ -53,6 +54,7 @@ command:
 
 term:
 | UNIT { Utils.Unit }
+| LEFT_PAREN; PRINT; t = term; RIGHT_PAREN { Utils.Print_char t }
 | COMP; LEFT_PAREN; t = term; RIGHT_PAREN { Utils.Computation t }
 | FUN; LEFT_PAREN; x = ID; COLON; tau = typ; RIGHT_PAREN; ARROW; t = term
     { Utils.Abstraction (tau, x, t) }
@@ -60,7 +62,7 @@ term:
 | FORCE; LEFT_PAREN; t = term; RIGHT_PAREN { Utils.Force t }
 | LETR; x = ID; EQUAL; e1 = term; IN; e2 = term
     { Utils.Bind (e1, x, e2) }
-| t1 = term; POINT; t2 = term 
+| LEFT_PAREN; t1 = term; t2 = term ; RIGHT_PAREN
     { Utils.Application (t1, t2) }
 | LEFT; LEFT_BRACKET; t = typ; RIGHT_BRACKET; LEFT_PAREN; e = term; RIGHT_PAREN
     { Utils.Left (t, e) }

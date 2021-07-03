@@ -9,8 +9,8 @@
         }
 }
 let white = [' ' '\t']+
-let stext = ['a'-'z' '_']['a'-'z' '_' '0'-'9' '\'']*
-let ctext = ['A'-'Z']['A'-'Z' '_' '0'-'9' '\'']*
+let stext = ['a'-'z' '_' '0'-'9' '\'' '?']+
+let ctext = ['A'-'Z']['A'-'Z' '_' '0'-'9' '\'' '?']*
 
 rule read = parse
 | white { read lexbuf }
@@ -24,9 +24,9 @@ rule read = parse
 | "Eval" { EVAL }
 | "->" { ARROW }
 | '+' { PLUS }
-| '1' { ONE }
+| "unit" { ONE }
 | "()" { UNIT }
-| '.' { POINT }
+(*| '.' { POINT }*)
 | '=' { EQUAL }
 | '(' { LEFT_PAREN }
 | ')' { RIGHT_PAREN }
@@ -49,6 +49,7 @@ rule read = parse
 | "ret" { RET }
 | '*' { STAR }
 | "lets" { LETS }
+| "print_char" { PRINT }
 | stext { ID (Lexing.lexeme lexbuf) }
 | ctext { MID (Lexing.lexeme lexbuf) }
 | eof { EOF }

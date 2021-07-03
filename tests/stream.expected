@@ -10,7 +10,7 @@ Macro FIX registered
 
 type nat : rec(t, (1 + t))
 
-val zero : rec(t, (1 + t))
+val 0 : rec(t, (1 + t))
 
 val succ : (rec(t, (1 + t)) -> rec(t, (1 + t)))
 
@@ -36,23 +36,23 @@ val pop : (rec(t, ((1 + 1) x lazy(t))) -> ((1 + 1) x rec(t, ((1 + 1) x lazy(t)))
 
 comput take : (rec(t, (1 + t)) -> (rec(t, ((1 + 1) x lazy(t))) -> rec(t, (1 + ((1 + 1) x t)))))
 
-comput zeros : rec(t, ((1 + 1) x lazy(t)))
+comput 0s : rec(t, ((1 + 1) x lazy(t)))
 
 comput map : (((1 + 1) -> (1 + 1)) -> (rec(t, ((1 + 1) x lazy(t))) -> rec(t, ((1 + 1) x lazy(t)))))
 
 comput merge : (rec(t, ((1 + 1) x lazy(t))) -> (rec(t, ((1 + 1) x lazy(t))) -> rec(t, ((1 + 1) x lazy(t)))))
 
-comput one : rec(t, (1 + t))
+comput 1 : rec(t, (1 + t))
 
-comput two : rec(t, (1 + t))
+comput 2 : rec(t, (1 + t))
 
-Macro TAKETWO registered
+Macro TAKE2 registered
 
 eval -> comput rec(t, (1 + ((1 + 1) x t))) =
 ret (fold(right(<right(()), fold(right(<right(()), fold(left(()))>))>)
 ))
 
-comput ones : rec(t, ((1 + 1) x lazy(t)))
+comput 1s : rec(t, ((1 + 1) x lazy(t)))
 
 eval -> comput rec(t, (1 + ((1 + 1) x t))) =
 ret (fold(right(<left(()), fold(right(<left(()), fold(left(()))>))>)

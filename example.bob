@@ -1,5 +1,5 @@
 (* Declare a boolean type *)
-Type bool = (1 + 1)
+Type bool = (unit + unit)
 
 (* left() and right() operators need a type annotation to know to what type we
  * are injecting *)
@@ -14,7 +14,7 @@ Declare flip = fun (x : bool) ->
         left(_) (* true *) -> ret (false) (* lambdas should return lazyutations *)
         right(_) (* false *) -> ret (true)
 
-Eval (flip . true)
+Eval (flip true)
 Eval false
 
 Macro C e v = let* _ = v in e
@@ -26,31 +26,31 @@ Declare apply_twice =
              * so we need to wrap it in a lazy and
              * bind it with let* to get the value
              *)
-            C(f . _, f . x)
+            C((f _), (f x))
     )
 
 (* Display the type of an expression *)
-Check (apply_twice . flip)
+Check (apply_twice flip)
 
 Eval
-    let* double_flip = (apply_twice . flip) in
-    (double_flip . true)
+    let* double_flip = (apply_twice flip) in
+    (double_flip true)
 
 (* Natural numbers definition using a recursive type *)
-Type nat = rec(t, (1 + t))
-Declare zero = fold[nat](left[(1 + nat)](()))
-Declare succ = fun (x : nat) -> ret (fold[nat](right[(1 + nat)](x)))
+Type nat = rec(t, (unit + t))
+Declare 0 = fold[nat](left[(unit + nat)](()))
+Declare succ = fun (x : nat) -> ret (fold[nat](right[(unit + nat)](x)))
 
 (* Some testing *)
-Declare two = let* one = (succ . zero) in (succ . one)
+Declare 2 = let* 1 = (succ 0) in (succ 1)
 
-Declare minus_one = fun (i : nat) ->
+Declare minus_1 = fun (i : nat) ->
      let* unpacked = unfold(i) in
      case unpacked of
-         left(_) -> ret(zero)
+         left(_) -> ret(0)
          right(pred) -> ret(pred)
 
-Eval C(minus_one . _, two)
+Eval (minus_1 2)
 
 (*** Definition of a fixpoint operator as a macro ***)
 
@@ -63,7 +63,7 @@ Macro SELF [tau] expr = fold[SELF(tau)](fun (tmp : SELF(tau)) -> expr)
 (* All macro names must be in CAPITAL LETTERS *)
 Macro UNROLL g =
      let* unf = unfold(g) in
-     (unf . g)
+     (unf  g)
 
 (* SUBSTITUTE(f,t,e) is a built-in macro substituting f by t in e *)
 Macro FIX [tau] x e =
@@ -71,9 +71,9 @@ Macro FIX [tau] x e =
 
 
 (* A boring recursive function (eval it if you dare) *)
-Declare infinite = FIX[(1 -> 1)](infinite,
-    ret( fun (_ : 1) ->
-        C(_ . (), infinite)
+Declare infinite = FIX[(unit -> unit)](infinite,
+    ret( fun (_ : unit) ->
+        C((_ ()), infinite)
     )
 )
 
@@ -82,37 +82,34 @@ Declare double = FIX[(nat -> nat)](double,
  ret (fun (x : nat) ->
      let* x' = unfold(x) in
      case x' of
-         left(_) -> ret(zero)
+         left(_) -> ret(0)
          right(e) ->
-            C(succ . _, C(succ . _, C(_ . e, double)))
+            C((succ  _), C((succ  _), C((_ e), double)))
   ))
 
 (* Wow, 2 * 2 = 4 *)
-Eval
-    let* two' = two in
-    let* f = double in
-    (f . two')
+Eval (double  2)
 
 (* We can effectively simulate call by name *)
 
 (* Define an IF for branches returning suspended unit lazyutations *)
 Declare if_unit =
     fun (b : bool) -> ret (
-    fun (e1 : lazy(1)) -> ret (
-    fun (e2 : lazy(1)) -> 
+    fun (e1 : lazy(unit)) -> ret (
+    fun (e2 : lazy(unit)) -> 
         case b of
             left(l) -> force(e1)
             right(r) -> force(e2)
     ))
 
 (* A easier syntax for applicating it and automatically suspending
- * the lazyutations of the parameters *)
+ * the computations of the parameters *)
 Macro IF_UNIT b e1 e2 =
-    C(_ . lazy(e2), C(_ . lazy(e1), if_unit . b))
+    C((_ lazy(e2)), C((_ lazy(e1)), (if_unit b)))
 
 (* The infinite branch is not evaluated (try replacing false by true *)
 Eval
     IF_UNIT(false,
-        C(_ . (), infinite),
+        (infinite ()),
         ret(())
     )

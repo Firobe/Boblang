@@ -10,7 +10,14 @@ let tyexpand_everything tyenv matyenv t =
     | TMacro (id, tl) ->
       let tl' = List.map (tymapply w) tl in
       if id = f then
-        List.fold_left2 (fun a b c -> tsubstitute b c a) r params tl
+        let plen = List.length params in
+        let tlen = List.length tl in
+        if plen = tlen then
+          List.fold_left2 (fun a b c -> tsubstitute b c a) r params tl
+        else
+          failwith (Format.sprintf
+                      "Macro %s expected %d arguments but got %d"
+                      id plen tlen)
       else TMacro (id, tl')
     | (TVar _) as v -> v
     | TArrow (tau1, tau2) -> 
@@ -44,6 +51,7 @@ let expand_types_in_term tyenv matyenv =
   | Fold (t, e) -> Fold (te t, aux e)
   | Unfold t -> Unfold (aux t)
   | Macro (id, ttl, tl) -> Macro (id, List.map te ttl, List.map aux tl)
+  | Print_char t -> Print_char (aux t)
   in aux
 
 let texpand_everything tenv tyenv matenv matyenv t =
@@ -60,7 +68,16 @@ let texpand_everything tenv tyenv matenv matyenv t =
             | _ -> failwith "SUBSTITUTE wrongly applied"
           end
         else
-        let r' = List.fold_left2 (fun a b c -> substitute b c a) r params tl' in
+        let plen = List.length params in
+        let tlen = List.length tl' in
+        let r' =
+          if plen = tlen then
+            List.fold_left2 (fun a b c -> substitute b c a) r params tl'
+          else
+            failwith (Format.sprintf
+                        "Macro %s expected %d arguments but got %d"
+                        id plen tlen)
+        in
         let assoc = List.map2 (fun a b -> (a, b)) tparams ttl' in
         expand_types_in_term assoc [] r'
       else Macro (id, ttl', tl')
@@ -79,6 +96,7 @@ let texpand_everything tenv tyenv matenv matyenv t =
     | Split (e, x1, x2, e') -> Split (tmapply w e, x1, x2, tmapply w e')
     | Fold (t, e) -> Fold (t, tmapply w e)
     | Unfold t -> Unfold (tmapply w t)
+    | Print_char t -> Print_char (tmapply w t)
   in
   let t'' = List.fold_left (fun e w -> tmapply w e) t' matenv in
   expand_types_in_term tyenv matyenv t''

@@ -1,0 +1,179 @@
+(* ================ UTILITIES ==================== *)
+
+Macro C _e _v = let* _ = _v in _e (* EASY CHAINING *)
+
+Macro REC_CALL _f _a = let* _f = _f in (_f _a)
+Macro CURRY2 _f _a _b = let* _partial = (_f _a) in (_partial _b)
+Macro REC_CALL2 _f _a _b = C(CURRY2(_, _a, _b), _f)
+
+
+(* ================ RECURSION ==================== *)
+
+Typemacro SELF tau = rec(t, (t -> tau))
+Macro SELF [tau] expr = fold[SELF(tau)](fun (tmp : SELF(tau)) -> expr)
+Macro UNROLL g =
+     let* unf = unfold(g) in
+     (unf g)
+Macro FIX [tau] x e =
+     UNROLL(SELF[tau](SUBSTITUTE(x, UNROLL(tmp), e)))
+Macro FIXFUN [tau] name body = FIX[tau](name, ret(body))
+
+(* ================== BOOL ====================== *)
+
+Type bool = (unit + unit)
+Declare true = left[bool](())
+Declare false = right[bool](())
+
+Declare not = fun (x : bool) ->
+    case x of
+        left(_) (* true *) -> ret (false)
+        right(_) (* false *) -> ret (true)
+
+(* ================== NAT ====================== *)
+
+Type nat = rec(t, (unit + t))
+Declare 0 = fold[nat](left[(unit + nat)](()))
+Declare succ = fun (x : nat) -> ret (fold[nat](right[(unit + nat)](x)))
+
+(* Some common numbers *)
+Declare 1 = (succ 0)
+Declare 2 = (succ 1)
+Declare 3 = (succ 2)
+Declare 4 = (succ 3)
+Declare 5 = (succ 4)
+Declare 6 = (succ 5)
+Declare 7 = (succ 6)
+Declare 8 = (succ 7)
+Declare 9 = (succ 8)
+Declare 10 = (succ 9)
+
+(* Addition *)
+Declare add = FIX[(nat -> (nat -> nat))](add, ret(
+    fun (n1 : nat) -> ret(fun (n2 : nat) ->
+        let* n1' = unfold(n1) in
+        case n1' of
+            left(_) -> ret(n2)
+            right(n1'') ->
+                let* n2' = (succ n2) in
+                REC_CALL2(add, n1'', n2')
+)))
+
+(* Mutiplication *)
+Declare mult = FIX[(nat -> (nat -> nat))](mult, ret(
+    fun (n1 : nat) -> ret(fun (n2 : nat) ->
+        let* n1' = unfold(n1) in
+        case n1' of
+            left(_) -> ret(0)
+            right(n1'') ->
+                C(CURRY2(add, n2, _), REC_CALL2(mult, n1'', n2))
+)))
+
+(* Option types *)
+Typemacro MAYBE tau = (tau + unit)
+Macro SOME [tau] v = left[MAYBE(tau)](v)
+Macro NONE [tau] _ = right[MAYBE(tau)](())
+
+(* Subtraction *)
+Declare sub = FIX[(nat -> (nat -> MAYBE(nat)))](sub, ret(
+    fun (n1 : nat) -> ret(fun (n2 : nat) ->
+        let* n2' = unfold(n2) in
+        case n2' of
+            left(_) (*zero*) -> ret(SOME[nat](n1))
+            right(n2'') ->
+                let* n1' = unfold(n1) in
+                case n1' of
+                    left(_) (* n1 < n2 *) -> ret(NONE[nat](()))
+                    right(n1'') -> REC_CALL2(sub, n1'', n2'')
+)))
+
+(* >= *)
+Declare geq = fun (n1 : nat) -> ret(fun (n2 : nat) ->
+    let* res = CURRY2(sub, n1, n2) in
+    case res of
+        left(_) (*some*) -> ret(true)
+        right(_) (*none*) -> ret(false)
+)
+(* < *)
+Declare lt = fun (n1 : nat) -> ret(fun (n2 : nat) ->
+    let* geq? = CURRY2(geq, n1, n2) in
+    (not geq?)
+)
+
+(* Euclidian division (division on 0 will loop indefinitely) *)
+Declare eucdiv = fun (n1 : nat) -> ret(fun (n2 : nat) ->
+    let* aux = FIX[(nat -> (nat -> (nat * nat)))](aux, ret(
+        fun (rem : nat) -> ret(fun (res : nat) ->
+            let* sub? = CURRY2(sub, rem, n2) in
+            case sub? of
+                left(next) (* some *) ->
+                    let* nres = (succ res) in
+                    REC_CALL2(aux, next, nres)
+                right(_) (* none *) -> ret((rem, res))
+    ))) in CURRY2(aux, n1, 0))
+
+(* Division quotient *)
+Declare div = fun (n1 : nat) -> ret(fun (n2 : nat) ->
+    let* dres = CURRY2(eucdiv, n1, n2) in
+    lets (_, res) = dres in ret(res)
+)
+(* Remainder *)
+Declare mod = fun (n1 : nat) -> ret(fun (n2 : nat) ->
+    let* dres = CURRY2(eucdiv, n1, n2) in
+    lets (mod, _) = dres in ret(mod)
+)
+        
+(* ================ FACTORIAL ================== *)
+
+Declare factorial = FIXFUN[(nat -> nat)](factorial,
+    fun (n : nat) ->
+        let* unpacked = unfold(n) in
+        case unpacked of
+            left(_) -> ret(1)
+            right(n') -> 
+                let* res = REC_CALL(factorial, n') in
+                CURRY2(mult, res, n)
+)
+
+(* ================ NAT PRINTER ================= *)
+
+Declare 24 = (factorial 4)
+Declare 32 = CURRY2(add, 24, 8)
+
+Declare print_newline = fun (_ : unit) -> (print_char 10)
+
+Declare print_space = fun (_ : unit) -> (print_char 32)
+
+Declare print_digit = fun (n : nat) ->
+    let* '0' = CURRY2(mult, 24, 2) (* 48 *) in
+    let* printable = CURRY2(add, '0', n) in
+    (print_char printable)
+
+Declare print_nat = FIXFUN[(nat -> unit)](print_nat,
+    fun (n : nat) ->
+        let* dres = CURRY2(eucdiv, n, 10) in
+        lets (rem, res) = dres in
+        let* res' = unfold(res) in
+        case res' of
+            left(_) (*0*) -> (print_digit rem)
+            right(_) -> 
+                let* _ = REC_CALL(print_nat, res) in
+                (print_digit rem)
+)
+
+(* Print 6! *)
+Eval 
+    let* res = (factorial 6) in
+    let* _ = (print_nat res) in
+    (print_newline ())
+
+(* ======== FIBONACCI ========= *)
+
+Declare fibo_print = FIX[(nat -> (nat -> unit))](fibo_print, ret(
+    fun (a : nat) -> ret(fun (b : nat) ->
+        let* next = CURRY2(add, a, b) in
+        let* _ = (print_nat a) in
+        let* _ = (print_newline ()) in
+        C(CURRY2(_, b, next), fibo_print)
+)))
+
+Eval CURRY2(fibo_print, 0, 1)
