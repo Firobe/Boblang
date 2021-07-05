@@ -156,10 +156,17 @@ open Parsing
 let execute program quiet =
   let verbose = not quiet in
   let rec one tenv tyenv matenv matyenv seen = function
+    | Type (n, t) ->
+      if verbose then printf "type %s : %a@," n pp_ttype t;
+      tenv, (n, t) :: tyenv, matenv, matyenv, seen
+    | DeclareMacro (n, tparams, params, t) ->
+      if verbose then printf "Macro %s registered@." n;
+      tenv, tyenv, (n, tparams, params, t) :: matenv, matyenv, seen
+    | Typemacro (n, params, t) ->
+      if verbose then printf "Typemacro %s registered@." n;
+      tenv, tyenv, matenv, (n, params, t) :: matyenv, seen
     | Declare (n, t) ->
-      let t' = texpand_everything tenv tyenv matenv matyenv t in
-      let ts = texpand_everything tenv tyenv (("SUBSTITUTE", [], [], Unit) ::
-                                              matenv) matyenv t' in
+      let ts = texpand_everything tenv tyenv matenv matyenv t in
       let tau, j = typecheck ts in
       if verbose then printf "%a %s : %a@." pp_judgement j n pp_ttype tau;
       if j = JValue then
@@ -172,18 +179,6 @@ let execute program quiet =
               n pp_term stuck
           in failwith msg
       end
-    | Type (n, t) ->
-      let t' = tyexpand_everything tyenv matyenv t in
-      if verbose then printf "type %s : %a@," n pp_ttype t';
-      tenv, (n, t') :: tyenv, matenv, matyenv, seen
-    | DeclareMacro (n, tparams, params, t) ->
-      let t' = texpand_everything tenv tyenv matenv matyenv t in
-      if verbose then printf "Macro %s registered@." n;
-      tenv, tyenv, (n, tparams, params, t') :: matenv, matyenv, seen
-    | Typemacro (n, params, t) ->
-      let t' = tyexpand_everything tyenv matyenv t in
-      if verbose then printf "Typemacro %s registered@." n;
-      tenv, tyenv, matenv, (n, params, t') :: matyenv, seen
     | Check t ->
       let t' = texpand_everything tenv tyenv matenv matyenv t in
       let r = typecheck t' in

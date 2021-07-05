@@ -1,7 +1,7 @@
-Bob nat
-Bob list
-Bob print
-Bob recursion
+Bob libob.nat
+Bob libob.list
+Bob libob.print
+Bob libob.recursion
 
 (* ================ STREAMS ==================== *)
 
