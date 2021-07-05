@@ -1,0 +1,12 @@
+Bob libob.utils
+
+Typemacro SELF tau = rec(t, (t -> tau))
+Macro SELF [tau] expr = fold[SELF(tau)](fun (tmp : SELF(tau)) -> expr)
+Macro UNROLL g =
+     let* unf = unfold(g) in
+     (unf g)
+Macro FIX [tau] x e =
+     UNROLL(SELF[tau](SUBSTITUTE(x, UNROLL(tmp), e)))
+Macro FIXFUN [tau] name body = FIX[tau](name, ret(body))
+Macro REC_CALL _f _a = let* _f = _f in (_f _a)
+Macro REC_CALL2 _f _a _b = C(CURRY2(_, _a, _b), _f)

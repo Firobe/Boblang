@@ -1,0 +1,8 @@
+Type bool = (unit + unit)
+Declare true = left[bool](())
+Declare false = right[bool](())
+
+Declare not = fun (x : bool) ->
+    case x of
+        left(_) (* true *) -> ret (false)
+        right(_) (* false *) -> ret (true)

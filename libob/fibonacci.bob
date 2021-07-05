@@ -1,0 +1,10 @@
+Bob libob.nat
+Bob libob.print
+
+Declare fibo_print = FIX[(nat -> (nat -> unit))](fibo_print, ret(
+    fun (a : nat) -> ret(fun (b : nat) ->
+        let* next = CURRY2(add, a, b) in
+        let* _ = (print_nat a) in
+        let* _ = (print_newline ()) in
+        C(CURRY2(_, b, next), fibo_print)
+)))

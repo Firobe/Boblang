@@ -57,27 +57,30 @@ type term =
 let rec pp_term fmt = function
   | Unit -> pp_print_string fmt "()"
   | Variable v -> pp_print_string fmt v
-  | Computation t -> fprintf fmt "@[<hv 2>lazy(@,%a@]@,)" pp_term t
-  | Abstraction (_, id, e) -> fprintf fmt "@[<hv 2>λ(%s,@ %a@]@,)" id pp_term e
-  | Return t -> fprintf fmt "ret (%a)" pp_term t
-  | Bind (t, id, e) -> fprintf fmt "@[<hv 2>let %s =@ %a@]@ in %a" id pp_term t pp_term e
-  | Application (t1, t2) -> fprintf fmt "@[<hv 2>(@,%a@ . %a@]@,)" pp_term t1 pp_term t2
-  | Force t -> fprintf fmt "force (%a)" pp_term t
-  | Left (_, t) -> fprintf fmt "@[<hv 2>left(@,%a@]@,)"
+  | Computation t -> fprintf fmt "@[<hv 2>lazy(@,%a)@]" pp_term t
+  | Abstraction (_, id, e) -> fprintf fmt "@[<hv 2>λ(%s,@ %a)@]" id pp_term e
+  | Return t -> fprintf fmt "@[<hv 2>ret (@,%a)@]" pp_term t
+  | Bind (t, id, e) -> fprintf fmt "@[<hv 2>let %s =@ %a@]@ in@ %a" id pp_term t pp_term e
+  | Application (t1, t2) -> fprintf fmt "@[<hv 2>(@,%a@ .@ %a)@]" pp_term t1 pp_term t2
+  | Force t -> fprintf fmt "@[<hv 2>force (@,%a)@]" pp_term t
+  | Left (_, t) -> fprintf fmt "@[<hv 2>left(@,%a)@]"
                      pp_term t
-  | Right (_, t) -> fprintf fmt "@[<hv 2>right(@,%a@]@,)"
+  | Right (_, t) -> fprintf fmt "@[<hv 2>right(@,%a)@]"
                       pp_term t
   | Case (e, x1, e1, x2, e2) ->
-    fprintf fmt "@[<hv 2>(match@ %a with@ left(%s) ->@ %a@ right(%s) ->@ %a@]@,)"
+    fprintf fmt "@[<hv 2>(match@ %a with@ left(%s) ->@ %a@ right(%s) ->@ %a)@]"
       pp_term e x1 pp_term e1 x2 pp_term e2
-  | Tuple (t1, t2) -> fprintf fmt "@[<hv 2><%a,@ %a@]@,>" pp_term t1 pp_term t2
+  | Tuple (t1, t2) -> fprintf fmt "@[<hv 2><%a,@ %a>@]" pp_term t1 pp_term t2
   | Split (e, x1, x2, e') ->
-    fprintf fmt "@[<hv 2>(let <%s,%s> =@ %a@ in %a@]@,)"
+    fprintf fmt "@[<hv 2>(let <%s,%s> =@ %a@ in %a)@]"
       x1 x2 pp_term e pp_term e'
-  | Fold (_, e) -> fprintf fmt "@[<hv 2>fold(@,%a@]@,)" pp_term e
-  | Unfold e -> fprintf fmt "@[<hv 2>unfold(@,%a@]@,)" pp_term e
-  | Macro _ -> failwith "Cannot print macro"
-  | Print_char e -> fprintf fmt "print(%a)" pp_term e
+  | Fold (_, e) -> fprintf fmt "@[<hv 2>fold(@,%a)@]" pp_term e
+  | Unfold e -> fprintf fmt "@[<hv 2>unfold(@,%a)@]" pp_term e
+  | Macro (m, tyl, tl) ->
+    let pp_sep fmt () = Format.fprintf fmt ",@ " in
+    fprintf fmt "%s[%a](%a)" m (pp_print_list ~pp_sep pp_ttype) tyl
+      (pp_print_list ~pp_sep pp_term) tl
+  | Print_char e -> fprintf fmt "@[<hv 2>print (@,%a)@]" pp_term e
 
 type command =
   | Declare of string * term
@@ -86,6 +89,7 @@ type command =
   | Typemacro of string * string list * ttype
   | Check of term
   | Eval of term
+  | Include of string
 
 let rec tsubstitute f t = function
   | TUnit -> TUnit

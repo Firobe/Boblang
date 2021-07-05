@@ -1,0 +1,26 @@
+Bob libob.nat
+Bob libob.factorial
+
+Declare 24 = (factorial 4)
+Declare 32 = CURRY2(add, 24, 8)
+
+Declare print_newline = fun (_ : unit) -> (print_char 10)
+
+Declare print_space = fun (_ : unit) -> (print_char 32)
+
+Declare print_digit = fun (n : nat) ->
+    let* '0' = CURRY2(mult, 24, 2) (* 48 *) in
+    let* printable = CURRY2(add, '0', n) in
+    (print_char printable)
+
+Declare print_nat = FIXFUN[(nat -> unit)](print_nat,
+    fun (n : nat) ->
+        let* dres = CURRY2(eucdiv, n, 10) in
+        lets (rem, res) = dres in
+        let* res' = unfold(res) in
+        case res' of
+            left(_) (*0*) -> (print_digit rem)
+            right(_) -> 
+                let* _ = REC_CALL(print_nat, res) in
+                (print_digit rem)
+)

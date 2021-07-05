@@ -54,6 +54,8 @@ let expand_types_in_term tyenv matyenv =
   | Print_char t -> Print_char (aux t)
   in aux
 
+(* This seems wrong, better expand all macros in the same pass instead of one at
+ * a time *)
 let texpand_everything tenv tyenv matenv matyenv t =
   let t' = expand_known_terms t tenv in
   let rec tmapply ((f, tparams, params, r) as w) = function

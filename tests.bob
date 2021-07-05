@@ -1,0 +1,12 @@
+Bob libob.factorial
+Bob libob.fibonacci
+
+(* Print 6! *)
+Eval 
+    let* res = (factorial 6) in
+    let* _ = (print_nat res) in
+    (print_newline ())
+
+(* Print all fibonacci numbers *)
+Eval CURRY2(fibo_print, 0, 1)
+

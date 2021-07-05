@@ -35,6 +35,7 @@
 %token LETS
 %token STAR
 %token PRINT
+%token INCLUDE
 
 %start <Utils.command list> program
 
@@ -51,6 +52,7 @@ command:
 | TYPEMACRO; n = MID; params = ID*; EQUAL; t = typ {Utils.Typemacro (n, params, t)}
 | CHECK; t = term {Utils.Check t}
 | EVAL; t = term {Utils.Eval t}
+| INCLUDE; n = ID { Utils.Include n }
 
 term:
 | UNIT { Utils.Unit }
@@ -80,6 +82,9 @@ term:
     { Utils.Macro (n, l1, l2) }
 | n = MID; LEFT_PAREN; l = separated_nonempty_list(COMMA, term); RIGHT_PAREN
     { Utils.Macro (n, [], l) }
+| n = MID; LEFT_BRACKET; l1 = separated_nonempty_list (COMMA, typ);
+    RIGHT_BRACKET
+    { Utils.Macro (n, l1, []) }
 | LEFT_PAREN; t1 = term; COMMA; t2 = term; RIGHT_PAREN { Utils.Tuple (t1, t2) }
 | LETS; LEFT_PAREN; x1 = ID; COMMA; x2 = ID; RIGHT_PAREN; EQUAL;
     e = term; IN; ee = term { Utils.Split (e, x1, x2, ee) }

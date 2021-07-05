@@ -1,0 +1,8 @@
+Typemacro LIST tau = rec(t, (unit + (tau * t)))
+
+Macro NIL [tau] = fold[LIST(tau)](left[(unit + (tau * LIST(tau)))](()))
+
+Macro CONS [tau] =
+    fun (x : tau) -> ret (fun (l : LIST(tau)) ->
+        fold[LIST(tau)](right[(unit + (tau * LIST(tau)))]((x ,l)))
+    )

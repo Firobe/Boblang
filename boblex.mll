@@ -9,7 +9,7 @@
         }
 }
 let white = [' ' '\t']+
-let stext = ['a'-'z' '_' '0'-'9' '\'' '?']+
+let stext = ['a'-'z' '_' '0'-'9' '\'' '?' '.']+
 let ctext = ['A'-'Z']['A'-'Z' '_' '0'-'9' '\'' '?']*
 
 rule read = parse
@@ -19,6 +19,7 @@ rule read = parse
 | "Type" { TYPE }
 | "Declare" { DECLARE }
 | "Typemacro" { TYPEMACRO }
+| "Bob" { INCLUDE }
 | "Macro" { MACRO }
 | "Check" { CHECK }
 | "Eval" { EVAL }

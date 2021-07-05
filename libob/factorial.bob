@@ -1,0 +1,11 @@
+Bob libob.nat
+
+Declare factorial = FIXFUN[(nat -> nat)](factorial,
+    fun (n : nat) ->
+        let* unpacked = unfold(n) in
+        case unpacked of
+            left(_) -> ret(1)
+            right(n') -> 
+                let* res = REC_CALL(factorial, n') in
+                CURRY2(mult, res, n)
+)

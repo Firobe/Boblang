@@ -1,118 +1,83 @@
-Macro C e v = let* _ = v in e (* EASY CHAINING *)
-
-(* ================ RECURSION ==================== *)
-
-Typemacro SELF tau = rec(t, (t -> tau))
-Macro SELF [tau] expr = fold[SELF(tau)](fun (tmp : SELF(tau)) -> expr)
-Macro UNROLL g =
-     let* unf = unfold(g) in
-     (unf g)
-Macro FIX [tau] x e =
-     UNROLL(SELF[tau](SUBSTITUTE(x, UNROLL(tmp), e)))
-
-(* ================== NAT ====================== *)
-
-Type nat = rec(t, (unit + t))
-Declare 0 = fold[nat](left[(unit + nat)](()))
-Declare succ = fun (x : nat) -> ret (fold[nat](right[(unit + nat)](x)))
-
-(* ================== BOOL ====================== *)
-
-Type bool = (unit + unit)
-Declare true = left[bool]( () )
-Declare false = right[bool]( () )
-
-Declare flip = fun (x : bool) ->
-    case x of
-        left(_) (* true *) -> ret (false) (* lambdas should return computations *)
-        right(_) (* false *) -> ret (true)
-
-(* ================ BOOL LIST ================ *)
-
-Type blist = rec(t, (unit + (bool * t)))
-Declare nil = fold[blist](left[(unit + (bool * blist))](()))
-Declare cons =
-    fun (x : bool) -> ret (
-        fun (l : blist) -> ret (
-            fold[blist](right[(unit + (bool * blist))]((x ,l)))
-        )
-    )
+Bob nat
+Bob list
+Bob print
+Bob recursion
 
 (* ================ STREAMS ==================== *)
 
-Type stream = rec(t, (bool * lazy(t)))
-Declare push =
-    fun (x : bool) -> ret (
-        fun (s : lazy(stream)) -> ret (
-            fold[stream]((x, s))
+Typemacro STREAM tau = rec(t, (tau * lazy(t)))
+
+Macro SPUSH [tau] =
+    fun (x : tau) -> ret (
+        fun (s : lazy(STREAM(tau))) -> ret (
+            fold[STREAM(tau)]((x, s))
         )
     )
-Declare pop = fun (s : stream) ->
+
+Macro SPOP [tau] = fun (s : STREAM(tau)) ->
     let* c = unfold(s) in
     lets (x, rest) = c in
     let* next = force(rest) in
     ret((x, next))
 
-Declare take = FIX[(nat -> (stream -> blist))](take,
+Macro STAKE [tau] = FIX[(nat -> (STREAM(tau) -> LIST(tau)))](take,
 ret(
     fun (n : nat) -> ret (
-        fun (s : stream) ->
+        fun (s : STREAM(tau)) ->
             let* n' = unfold(n) in
             case n' of
-                left(_) -> ret(nil)
+                left(_) -> ret(NIL[tau])
                 right(e) ->
-                    let* s' = (pop s) in
-                    lets (x, rest) = s' in
-                    let* res = C((_ rest), C((_ e), take)) in
-                    C((_ res), (cons x))
+                    let* s' = (SPOP[tau] s) in
+                    lets (x, rest) = s' in 
+                    let* res = REC_CALL2(take, e, s) in
+                    CURRY2(CONS[tau], false, res)
         )
     )
 )
 
-Declare 0s = FIX[stream](0s,
-    C((_ lazy(0s)), (push false))
-)
-
-Declare map = FIX[((bool -> bool) -> (stream -> stream))](map,
+Macro SMAP [tau] = FIX[((tau -> tau) -> (STREAM(tau) -> STREAM(tau)))](map,
 ret(
-    fun (f : (bool -> bool)) -> ret(
-        fun (s : stream) ->
-            let* s' = (pop s) in
+    fun (f : (tau -> tau)) -> ret(
+        fun (s : STREAM(tau)) ->
+            let* s' = (SPOP[tau] s) in
             lets (x, rest) = s' in
-            let* rec_map = C((_ f), map) in
-            let* push_new = C((push _), (f x)) in
+            let* push_new = C((SPUSH[tau] _), (f x)) in
+            let* rec_map = REC_CALL(map, f) in
             (push_new lazy((rec_map rest)))
     )
 ))
 
-Declare merge = FIX[(stream -> (stream -> stream))](merge,
+Macro SMERGE [tau] = FIX[(STREAM(tau) -> (STREAM(tau) -> STREAM(tau)))](merge,
 ret (
-    fun (s1 : stream) -> ret (
-        fun (s2 : stream) ->
-            let* s1' = (pop s1) in
-            let* s2' = (pop s2) in
+    fun (s1 : STREAM(tau)) -> ret (
+        fun (s2 : STREAM(tau)) ->
+            let* s1' = (SPOP[tau] s1) in
+            let* s2' = (SPOP[tau] s2) in
             lets (x1, rest1) = s1' in
             lets (x2, rest2) = s2' in
-            let* frec' = C((_ rest1), merge) in
-            let* push' = (push x2) in
-            let* push''' = (push x1) in
+            let* frec' = REC_CALL(merge, rest1) in
+            let* push' = (SPUSH[tau] x2) in
+            let* push''' = (SPUSH[tau] x1) in
             (push''' lazy((push' lazy((frec' rest2)))))
     )
 ))
 
+
 (* ========================= TESTING ======================== *)
 
-Declare 1 = (succ 0)
-Declare 2 = (succ 1)
+Declare 0s = FIX[STREAM(nat)](0s,
+    CURRY2(SPUSH[nat], 0, lazy(0s))
+)
 
-Macro TAKE2 s = let* partial = (take 2) in (partial s)
+Declare stake = STAKE[nat]
 
 (* take 2 0s *)
-Eval TAKE2(0s)
+Eval CURRY2(stake, 2, 0s)
 
 (* map flip on 0s *)
 Declare 1s =
-    C((_ 0s), (map flip))
+    C((_ 0s), (map not))
 
 (* take 2 1s *)
 Eval TAKE2(1s)

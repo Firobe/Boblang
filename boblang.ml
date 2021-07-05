@@ -47,9 +47,9 @@ let typecheck =
         if j = JValue then
           if tau'' = tau then (tau', JComp)
           else (
-            Format.printf "%a ; %a@,f was %a@," pp_ttype tau'' pp_ttype tau
-              pp_term e1;
-            term_error "Incompatible types during application"
+            let msg = Format.asprintf "Incompatible types during application.
+            Expected %a@, but got %a." pp_ttype tau pp_ttype tau'' in
+            term_error msg
           )
         else term_error "Functions only applicable to values"
       | _ -> term_error "Can only apply functional values"
@@ -155,17 +155,17 @@ open Parsing
 
 let execute program quiet =
   let verbose = not quiet in
-  let one tenv tyenv matenv matyenv = function
+  let rec one tenv tyenv matenv matyenv seen = function
     | Declare (n, t) ->
       let t' = texpand_everything tenv tyenv matenv matyenv t in
       let ts = texpand_everything tenv tyenv (("SUBSTITUTE", [], [], Unit) ::
                                               matenv) matyenv t' in
       let tau, j = typecheck ts in
-      if verbose then printf "%a %s : %a@," pp_judgement j n pp_ttype tau;
+      if verbose then printf "%a %s : %a@." pp_judgement j n pp_ttype tau;
       if j = JValue then
-        (n, ts) :: tenv, tyenv, matenv, matyenv
+        (n, ts) :: tenv, tyenv, matenv, matyenv, seen
       else begin match eval ts with
-        | Return v -> (n, v) :: tenv, tyenv, matenv, matyenv
+        | Return v -> (n, v) :: tenv, tyenv, matenv, matyenv, seen
         | stuck ->
           let msg = Format.asprintf
               "Declare %s got stuck before value or return. Left with @.%a"
@@ -175,36 +175,41 @@ let execute program quiet =
     | Type (n, t) ->
       let t' = tyexpand_everything tyenv matyenv t in
       if verbose then printf "type %s : %a@," n pp_ttype t';
-      tenv, (n, t') :: tyenv, matenv, matyenv
+      tenv, (n, t') :: tyenv, matenv, matyenv, seen
     | DeclareMacro (n, tparams, params, t) ->
       let t' = texpand_everything tenv tyenv matenv matyenv t in
-      if verbose then printf "Macro %s registered@," n;
-      tenv, tyenv, (n, tparams, params, t') :: matenv, matyenv
+      if verbose then printf "Macro %s registered@." n;
+      tenv, tyenv, (n, tparams, params, t') :: matenv, matyenv, seen
     | Typemacro (n, params, t) ->
       let t' = tyexpand_everything tyenv matyenv t in
-      if verbose then printf "Typemacro %s registered@," n;
-      tenv, tyenv, matenv, (n, params, t') :: matyenv
+      if verbose then printf "Typemacro %s registered@." n;
+      tenv, tyenv, matenv, (n, params, t') :: matyenv, seen
     | Check t ->
       let t' = texpand_everything tenv tyenv matenv matyenv t in
       let r = typecheck t' in
-      if verbose then printf "check -> %a@," pp_metatype r;
-      tenv, tyenv, matenv, matyenv
+      if verbose then printf "check -> %a@." pp_metatype r;
+      tenv, tyenv, matenv, matyenv, seen
     | Eval t ->
       let t' = texpand_everything tenv tyenv matenv matyenv t in
       let tau, j = typecheck t' in
       let r = eval t' in
-      if verbose then printf "eval -> %a %a =@,%a@," pp_judgement j pp_ttype tau pp_term r;
-      tenv, tyenv, matenv, matyenv
-  in
-  let rec aux tenv tyenv matenv matyenv = function
-    | [] -> if verbose then printf "Done, bye!@,@]"
+      if verbose then printf "eval -> %a %a =@,%a@." pp_judgement j pp_ttype tau pp_term r;
+      tenv, tyenv, matenv, matyenv, seen
+    | Include n ->
+      if List.mem n seen then tenv, tyenv, matenv, matyenv, seen
+      else
+        let replaced = String.map (fun c -> if c = '.' then '/' else c) n in
+        aux tenv tyenv matenv matyenv (n :: seen) (parse (replaced ^ ".bob"))
+  and aux tenv tyenv matenv matyenv seen = function
+    | [] ->
+      (tenv, tyenv, matenv, matyenv, seen)
     | h :: t ->
-      let tenv', tyenv', matenv', matyenv' = one tenv tyenv matenv matyenv h in
-      if verbose then printf "@,";
-      aux tenv' tyenv' matenv' matyenv' t
-  in 
-  if verbose then printf "@[<v>";
-  aux [] [] [] [] program
+      let tenv', tyenv', matenv', matyenv', seen =
+        one tenv tyenv matenv matyenv seen h in
+      aux tenv' tyenv' matenv' matyenv' seen t
+  in if verbose then printf "@[<v>";
+  ignore (aux [] [] [] [] [] program);
+  if verbose then printf "Done, bye!@,@]"
 
 let main =
   let fn = Sys.argv.(1) in
