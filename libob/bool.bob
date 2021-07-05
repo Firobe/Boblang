@@ -2,7 +2,14 @@ Type bool = (unit + unit)
 Declare true = left[bool](())
 Declare false = right[bool](())
 
+Macro IF _x _then _else =
+    case _x of
+        left(_) -> _then
+        right(_) -> _else
+
+Macro IFC _x _then _else =
+    let* _condition = _x in
+    IF(_condition, _then, _else)
+
 Declare not = fun (x : bool) ->
-    case x of
-        left(_) (* true *) -> ret (false)
-        right(_) (* false *) -> ret (true)
+    IF(x, ret(false), ret(true))

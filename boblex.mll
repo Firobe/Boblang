@@ -51,6 +51,7 @@ rule read = parse
 | '*' { STAR }
 | "lets" { LETS }
 | "print_char" { PRINT }
+| "read_char" { READ }
 | stext { ID (Lexing.lexeme lexbuf) }
 | ctext { MID (Lexing.lexeme lexbuf) }
 | eof { EOF }

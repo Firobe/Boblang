@@ -2,6 +2,18 @@ open Utils
 
 (* STATICS *)
 
+let rec compatible_types (t1 : ttype) (t2 : ttype) =
+  let aux = compatible_types in
+  match t1, t2 with
+  | TArrow (a1, b1), TArrow(a2, b2)
+  | TSum (a1, b1), TSum (a2, b2)
+  | TProduct (a1, b1), TProduct (a2, b2) ->
+    aux a1 a2 && aux b1 b2
+  | TRecursive (id1, a1), TRecursive (id2, a2) when id1 <> id2 ->
+    aux (tsubstitute [(id1, TVar id2)] a1) a2
+  | TComp a1, TComp a2 -> aux a1 a2
+  | _, _ -> t1 = t2
+
 let typecheck =
   let rec aux env tt =
     let term_error msg =
@@ -45,14 +57,17 @@ let typecheck =
       | TArrow (tau, tau'), JValue ->
         let tau'', j = aux env e2 in
         if j = JValue then
-          if tau'' = tau then (tau', JComp)
+          if compatible_types tau'' tau then (tau', JComp)
           else (
             let msg = Format.asprintf "Incompatible types during application.
             Expected %a@, but got %a." pp_ttype tau pp_ttype tau'' in
             term_error msg
           )
         else term_error "Functions only applicable to values"
-      | _ -> term_error "Can only apply functional values"
+      | t, _ ->
+        let msg = Format.asprintf
+            "Type %a cannot be used as a function" pp_ttype t
+        in term_error msg
     end
   | Left (TSum (tau1, tau2), e) ->
     let tau'', j = aux env e in
@@ -73,12 +88,16 @@ let typecheck =
       | TSum (tau1, tau2), JValue ->
         let tau, j' = aux ((x1, tau1) :: env) e1 in
         let tau', j'' = aux ((x2, tau2) :: env) e2 in
-        if tau = tau' then
+        if compatible_types tau tau' then
           if j' = JComp then
             if j'' = JComp then (tau, JComp)
             else term_error "Second branch of case is not a comput"
           else term_error "First branch of case is not a comput"
-        else term_error "Branches in case do not have the same type"
+        else
+          let msg = Format.asprintf
+              "Branches in case do not have the same type.@ Left is %a and@
+              right is %a" pp_ttype tau pp_ttype tau'
+          in term_error msg
       | t, _ -> term_error
                (Format.asprintf "Case expects a value of type sum, got %a" pp_ttype t)
     end
@@ -110,9 +129,9 @@ let typecheck =
       if tau' = tsubstitute [(id, rect)] tau
       then rect, JValue
       else (
-        Format.printf "Fold types do not correspond:@,%a@,and@,%a@,"
-          pp_ttype tau' pp_ttype (tsubstitute [(id, rect)] tau);
-        term_error "Good luck with that"
+        let msg = Format.asprintf "Fold types do not correspond:@,%a@ and@ %a@,"
+          pp_ttype tau' pp_ttype (tsubstitute [(id, rect)] tau)in
+        term_error msg
       )
     else term_error "Fold expects a value"
   | Fold _ -> term_error "Fold expect a recursive type annotation"
@@ -123,6 +142,7 @@ let typecheck =
         (TUnit, JComp)
       | _ -> term_error "print_char expects a value of the form rec(t,unit +t)"
     end
+  | Read_char -> (maybe_type nat_type), JComp
   in aux []
 
 (* DYNAMICS *)
@@ -132,6 +152,7 @@ let (let*) = Option.bind
 (* [step t] returns (Some t') where t -> t' or None if evaluation is stuck *)
 let rec step = function
   | Print_char e -> print_char_term e; Some (Return Unit)
+  | Read_char -> Some (Return (read_char_term ()))
   | Application (Abstraction (_, x, e1), e2) -> Some (substitute [(x, e2)] e1)
   | Bind (Return v, x, e2) -> Some (substitute [(x, v)] e2)
   | Bind (e1, x, e2) -> let* e' = step e1 in Some (Bind (e', x, e2))
@@ -157,7 +178,8 @@ let execute program quiet =
   let verbose = not quiet in
   let rec one tenv tyenv matenv matyenv seen = function
     | Type (n, t) ->
-      if verbose then printf "type %s : %a@," n pp_ttype t;
+      if verbose then printf "type %s : %a@." n pp_ttype t;
+      let t = tyexpand_everything tyenv matyenv t in
       tenv, (n, t) :: tyenv, matenv, matyenv, seen
     | DeclareMacro (n, tparams, params, t) ->
       if verbose then printf "Macro %s registered@." n;

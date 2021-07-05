@@ -29,7 +29,9 @@ let rec pp_ttype fmt = function
   | TProduct (t1, t2) -> fprintf fmt "(%a x %a)" pp_ttype t1 pp_ttype t2
   | TRecursive (id, t) -> fprintf fmt "rec(%s, %a)" id pp_ttype t
   | TVar s -> pp_print_string fmt s
-  | TMacro _ -> assert false
+  | TMacro (m, tl) -> 
+    let pp_sep fmt () = Format.fprintf fmt ",@ " in
+    fprintf fmt "%s(%a)" m (pp_print_list ~pp_sep pp_ttype) tl
 
 type metatype = ttype * judgement
 
@@ -53,6 +55,7 @@ type term =
   | Unfold of term
   | Macro of identifier * ttype list * term list
   | Print_char of term
+  | Read_char
 
 let rec pp_term fmt = function
   | Unit -> pp_print_string fmt "()"
@@ -82,6 +85,7 @@ let rec pp_term fmt = function
     fprintf fmt "%s[%a](%a)" m (pp_print_list ~pp_sep pp_ttype) tyl
       (pp_print_list ~pp_sep pp_term) tl
   | Print_char e -> fprintf fmt "@[<hv 2>print (@,%a)@]" pp_term e
+  | Read_char -> fprintf fmt "@[<hv 2>read ()@]"
 
 type command =
   | Declare of string * term
@@ -140,12 +144,34 @@ let rec substitute subs t = match t with
   | Unfold e -> Unfold (substitute subs e)
   | Macro (id, ttl, tl) -> Macro (id, ttl, List.map (substitute subs) tl)
   | Print_char e -> Print_char (substitute subs e)
+  | Read_char -> Read_char
+
+let nat_type = TRecursive ("char", TSum(TUnit, TVar "char"))
+let maybe_type tau = TSum(tau, TUnit)
 
 let rec int_of_term = function
   | Fold (_, Right(_, next)) -> 1 + int_of_term next
   | Fold (_, Left(_, Unit)) -> 0
   | _ -> failwith "int_of_term got wrong structure"
 
+let rec term_of_int i =
+  if i = 0 then Fold(nat_type, Left(nat_type, Unit))
+  else Fold(nat_type, Right(nat_type, term_of_int (i - 1)))
+
 let print_char_term e =
   let i = (int_of_term e) mod 256 in
-  Printf.printf "%c%!" (Char.chr i)
+  if i < 32 && i <> 10 then
+    Printf.printf "<%d>%!" i
+  else Printf.printf "%c%!" (Char.chr i)
+
+let term_of_option tau convert =
+  let ot = maybe_type tau in
+  function
+  | Some x -> Left(ot, convert x)
+  | None -> Right(ot, Unit)
+
+let read_char_term () =
+  let c =
+    try Some(input_char stdin |> Char.code)
+    with End_of_file -> None
+  in term_of_option nat_type term_of_int c

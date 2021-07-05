@@ -113,3 +113,10 @@ Eval
         (infinite ()),
         ret(())
     )
+
+(* We can print and read characters (stored as nats) *)
+Eval
+    let* c? = (read_char) in
+    case c? of (* Check if we could read a character *)
+        left(c) -> (print_char c)
+        right(_) -> ret(())

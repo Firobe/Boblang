@@ -51,6 +51,7 @@ let map_term_types map =
   | Unfold t -> Unfold (aux t)
   | Macro (id, ttl, tl) -> Macro (id, List.map map ttl, List.map aux tl)
   | Print_char t -> Print_char (aux t)
+  | Read_char -> Read_char
   in aux
 
 let expand_known_terms t env =
@@ -110,6 +111,7 @@ let texpand_everything tenv tyenv matenv matyenv t =
     | Fold (t, e) -> Fold (t, expand_macros e)
     | Unfold t -> Unfold (expand_macros t)
     | Print_char t -> Print_char (expand_macros t)
+    | Read_char -> Read_char
   in
   let t = expand_macros false t in
   let t = expand_macros true t in

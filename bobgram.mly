@@ -35,6 +35,7 @@
 %token LETS
 %token STAR
 %token PRINT
+%token READ
 %token INCLUDE
 
 %start <Utils.command list> program
@@ -57,6 +58,7 @@ command:
 term:
 | UNIT { Utils.Unit }
 | LEFT_PAREN; PRINT; t = term; RIGHT_PAREN { Utils.Print_char t }
+| LEFT_PAREN; READ; RIGHT_PAREN { Utils.Read_char }
 | COMP; LEFT_PAREN; t = term; RIGHT_PAREN { Utils.Computation t }
 | FUN; LEFT_PAREN; x = ID; COLON; tau = typ; RIGHT_PAREN; ARROW; t = term
     { Utils.Abstraction (tau, x, t) }

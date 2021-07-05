@@ -1,0 +1,14 @@
+Bob libob.nat
+Bob libob.print
+
+Declare cat = FIXFUN[(unit -> unit)](cat,
+    fun (_ : unit) ->
+        let* c? = (read_char) in
+        case c? of
+            left(c) ->
+                let* _ = (print_char c) in
+                REC_CALL(cat, ())
+            right(_) -> ret(())
+)
+
+Eval (cat ())

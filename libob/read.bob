@@ -1,0 +1,14 @@
+Bob libob.nat
+Bob libob.list
+
+Declare read_until = FIXFUN[(nat -> LIST(nat))](read_until,
+    fun (until : nat) ->
+        let* c? = (read_char) in
+        case c? of
+            left(c) ->
+                IFC(CURRY2(equal, until, c), ret(NIL[nat]),
+                    let* res = REC_CALL(read_until, until) in
+                    CURRY2(CONS[nat], c, res)
+                )
+            right(_) -> ret(NIL[nat])
+)

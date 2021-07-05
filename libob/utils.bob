@@ -1,2 +1,6 @@
 Macro C _e _v = let* _ = _v in _e (* EASY CHAINING *)
 Macro CURRY2 _f _a _b = let* _partial = (_f _a) in (_partial _b)
+Macro CURRY3 _f _a _b _c =
+    let* _partial = (_f _a) in
+    let* _partial = (_partial _b) in
+    (_partial _c)

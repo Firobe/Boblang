@@ -17,3 +17,27 @@ Macro LIST_ITER [tau] = FIX[((tau -> unit) -> (LIST(tau) -> unit))](iter, ret(
                 let* _ = (f head) in
                 REC_CALL2(iter, f, tail)
 )))
+
+Macro LIST_LENGTH [tau] = FIXFUN[(LIST(tau) -> nat)](length,
+    fun (l : LIST(tau)) ->
+        let* l' = unfold(l) in
+        case l' of
+            left(_) -> ret(0)
+            right(next) ->
+                lets (_, tail) = next in
+                let* sum = REC_CALL(length, tail) in
+                (succ sum)
+)
+
+Macro LIST_NTH [tau] = FIX[(nat -> (LIST(tau) -> MAYBE(tau)))](nth, ret(
+    fun (n : nat) -> ret(fun (l : LIST(tau)) ->
+        let* l = unfold(l) in
+        case l of
+            left(_) -> ret(NONE[tau])
+            right(next) ->
+                lets (head, tail) = next in
+                let* n = unfold(n) in
+                case n of
+                    left(_) -> ret(SOME[tau](head))
+                    right(n') -> REC_CALL2(nth, n', tail)
+)))

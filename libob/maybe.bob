@@ -1,4 +1,4 @@
 Typemacro MAYBE tau = (tau + unit)
 Macro SOME [tau] v = left[MAYBE(tau)](v)
-Macro NONE [tau] _ = right[MAYBE(tau)](())
+Macro NONE [tau] = right[MAYBE(tau)](())
 
