@@ -1,8 +1,5 @@
 open Utils
 
-let expand_known_types t =
-  List.fold_left (fun e (id, v) -> tsubstitute id v e) t
-
 let tyexpand_everything tyenv matyenv t =
   let rec expand_tmacros = function
     | TUnit -> TUnit
@@ -16,7 +13,9 @@ let tyexpand_everything tyenv matyenv t =
           let plen = List.length params in
           let tlen = List.length tl' in
           if plen = tlen then
-            List.fold_left2 (fun a b c -> tsubstitute b c a) body params tl
+            let subs = List.map2 (fun a b -> (a, b)) params tl in
+            let sub = tsubstitute subs body in
+            expand_tmacros sub
           else
             failwith (Format.sprintf
                         "Macro %s expected %d arguments but got %d"
@@ -28,66 +27,71 @@ let tyexpand_everything tyenv matyenv t =
     | TComp tau -> TComp (expand_tmacros tau)
     | TSum (tau1, tau2) -> TSum (expand_tmacros tau1, expand_tmacros tau2)
     | TProduct (tau1, tau2) -> TProduct (expand_tmacros tau1, expand_tmacros tau2)
-    (*| (TRecursive (id, _)) as r when id = f -> r*)
     | TRecursive (id, tau) -> TRecursive (id, expand_tmacros tau)
   in
   let t' = expand_tmacros t in
-  expand_known_types t' tyenv
+  tsubstitute tyenv t'
 
-let expand_types_in_term tyenv matyenv =
-  let te = tyexpand_everything tyenv matyenv in
+let map_term_types map =
   let rec aux = function
   | Unit -> Unit
   | (Variable _) as v -> v
   | Computation t -> Computation (aux t)
-  | Abstraction (t, id, e) -> Abstraction (te t, id, aux e)
+  | Abstraction (t, id, e) -> Abstraction (map t, id, aux e)
   | Return t -> Return (aux t)
   | Force t -> Force (aux t)
   | Bind (e1, id, e2) -> Bind (aux e1, id, aux e2)
   | Application (e1, e2) -> Application (aux e1, aux e2)
-  | Left (t, e) -> Left (te t, aux e)
-  | Right (t, e) -> Right (te t, aux e)
+  | Left (t, e) -> Left (map t, aux e)
+  | Right (t, e) -> Right (map t, aux e)
   | Case (e, x1, e1, x2, e2) -> Case (aux e, x1, aux e1, x2, aux e2)
   | Tuple (e1, e2) -> Tuple (aux e1, aux e2)
   | Split (e, x1, x2, e') -> Split (aux e, x1, x2, aux e')
-  | Fold (t, e) -> Fold (te t, aux e)
+  | Fold (t, e) -> Fold (map t, aux e)
   | Unfold t -> Unfold (aux t)
-  | Macro (id, ttl, tl) -> Macro (id, List.map te ttl, List.map aux tl)
+  | Macro (id, ttl, tl) -> Macro (id, List.map map ttl, List.map aux tl)
   | Print_char t -> Print_char (aux t)
   in aux
 
-let expand_known_terms t =
-  List.fold_left (fun e (id, v) -> substitute id v e) t
+let expand_known_terms t env =
+  substitute env t
 
 let texpand_everything tenv tyenv matenv matyenv t =
-  let matenv = ("SUBSTITUTE", [], [], Unit) :: matenv in
-  let rec expand_macros = function
+  let rec expand_macros sub_pass t =
+    let expand_macros = expand_macros sub_pass in
+    match t with
+    | Macro ("SUBSTITUTE", [], [Variable n; replacement; inside]) ->
+      let replacement' = expand_macros replacement in
+      let inside' = expand_macros inside in
+      if sub_pass then substitute [(n, replacement')] inside'
+      else Macro("SUBSTITUTE", [], [Variable n; replacement'; inside'])
+    | Macro ("SUBSTITUTE", _, _) -> failwith "SUBSITUTE wrongly applied"
     | Macro (id, ttl, tl) ->
       begin match List.find_opt (fun (mid, _, _, _) -> mid = id) matenv with
       | None -> failwith ("Macro " ^ id ^ " unknown")
       | Some (_, type_names, term_names, body) ->
         let tl' = List.map expand_macros tl in
         let ttl' = List.map (tyexpand_everything tyenv matyenv) ttl in
-        let res = if id = "SUBSTITUTE" then
-            begin match tl' with
-              | [Variable n; tot; intt] ->
-                substitute n tot intt
-              | _ -> failwith "SUBSTITUTE wrongly applied"
-            end
-        else
-          let plen = List.length term_names in
-          let tlen = List.length tl' in
-            if plen = tlen then
-              let applied = List.fold_left2 (fun a b c -> substitute b c a)
-                  body term_names tl' in
-              expand_macros applied
-            else
-              failwith (Format.sprintf
-                          "Macro %s expected %d arguments but got %d"
-                          id plen tlen)
+        let plen = List.length term_names in
+        let tlen = List.length tl' in
+        let subs = if plen = tlen then
+            List.map2 (fun a b -> (a, b)) term_names tl'
+          else
+            failwith (Format.sprintf
+                        "Macro %s expected %d arguments but got %d"
+                        id plen tlen)
         in
-        let assoc = List.map2 (fun a b -> (a, b)) type_names ttl' in
-        expand_types_in_term (tyenv @ assoc) matyenv res
+        let res = substitute subs body in
+        let plen = List.length type_names in
+        let tlen = List.length ttl' in
+        let subs = if plen = tlen then
+            List.map2 (fun a b -> (a, b)) type_names ttl'
+          else
+            failwith (Format.sprintf "Macro %s expected %d type arguments but got %d"
+                        id plen tlen)
+        in
+        let t = map_term_types (tsubstitute subs) res in
+        expand_macros t
       end
     | Unit -> Unit
     | (Variable _) as v -> v
@@ -107,9 +111,10 @@ let texpand_everything tenv tyenv matenv matyenv t =
     | Unfold t -> Unfold (expand_macros t)
     | Print_char t -> Print_char (expand_macros t)
   in
-  let t' = expand_macros t in
-  let t'' = expand_known_terms t' tenv in
-  expand_types_in_term tyenv matyenv t''
+  let t = expand_macros false t in
+  let t = expand_macros true t in
+  let t = expand_known_terms t tenv in
+  map_term_types (tyexpand_everything tyenv matyenv) t
 
 let print_position fmt lexbuf =
   let open Lexing in

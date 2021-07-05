@@ -2,7 +2,7 @@ Bob libob.recursion
 Bob libob.maybe
 Bob libob.bool
 
-Type nat = rec(t, (unit + t))
+Type nat = rec(n, (unit + n))
 Declare 0 = fold[nat](left[(unit + nat)](()))
 Declare succ = fun (x : nat) -> ret (fold[nat](right[(unit + nat)](x)))
 

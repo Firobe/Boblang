@@ -1,5 +1,6 @@
 (executable
     (name boblang)
+    (modes byte exe)
 )
 
 (menhir (modules bobgram) (flags --explain))

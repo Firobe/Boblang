@@ -6,7 +6,7 @@ let typecheck =
   let rec aux env tt =
     let term_error msg =
       Format.printf "Term was:@.%a@.Error: %s@." pp_term tt msg;
-      failwith "Typing error"
+      failwith "Bob didn't like your types, fix your code."
     in match tt with
   | Unit -> (TUnit, JValue)
   | Variable v ->
@@ -100,18 +100,18 @@ let typecheck =
   | Unfold e ->
     begin match aux env e with
       | TRecursive (id, tau) as rect, JValue ->
-        tsubstitute id rect tau, JComp
+        tsubstitute [(id, rect)] tau, JComp
       | _ -> term_error "Unfold expects a recursive value"
     end
   | Fold (TRecursive(id, tau), e) ->
     let rect = TRecursive (id, tau) in
     let tau', j = aux env e in
     if j = JValue then
-      if tau' = tsubstitute id rect tau
+      if tau' = tsubstitute [(id, rect)] tau
       then rect, JValue
       else (
         Format.printf "Fold types do not correspond:@,%a@,and@,%a@,"
-          pp_ttype tau' pp_ttype (tsubstitute id rect tau);
+          pp_ttype tau' pp_ttype (tsubstitute [(id, rect)] tau);
         term_error "Good luck with that"
       )
     else term_error "Fold expects a value"
@@ -132,15 +132,15 @@ let (let*) = Option.bind
 (* [step t] returns (Some t') where t -> t' or None if evaluation is stuck *)
 let rec step = function
   | Print_char e -> print_char_term e; Some (Return Unit)
-  | Application (Abstraction (_, x, e1), e2) -> Some (substitute x e2 e1)
-  | Bind (Return v, x, e2) -> Some (substitute x v e2)
+  | Application (Abstraction (_, x, e1), e2) -> Some (substitute [(x, e2)] e1)
+  | Bind (Return v, x, e2) -> Some (substitute [(x, v)] e2)
   | Bind (e1, x, e2) -> let* e' = step e1 in Some (Bind (e', x, e2))
   | Force (Computation e) -> Some e
-  | Case (Left (_, v), x, e, _, _) -> Some (substitute x v e)
-  | Case (Right (_, v), _, _, x, e) -> Some (substitute x v e)
+  | Case (Left (_, v), x, e, _, _) -> Some (substitute [(x, v)] e)
+  | Case (Right (_, v), _, _, x, e) -> Some (substitute [(x, v)] e)
   | Case (e, x1, e1, x2, e2) ->
     let* e' = step e in Some(Case (e', x1, e1, x2, e2))
-  | Split (Tuple (a, b), x1, x2, e) -> Some (substitute x1 a (substitute x2 b e))
+  | Split (Tuple (a, b), x1, x2, e) -> Some (substitute [(x1, a); (x2, b)] e) 
   | Unfold (Fold ( _, e)) -> Some (Return e)
   | Unfold e -> let* e' = step e in Some(Unfold e')
   | _ -> None
@@ -167,6 +167,7 @@ let execute program quiet =
       tenv, tyenv, matenv, (n, params, t) :: matyenv, seen
     | Declare (n, t) ->
       let ts = texpand_everything tenv tyenv matenv matyenv t in
+      (* Format.printf "Full term: %a@." pp_term ts; *)
       let tau, j = typecheck ts in
       if verbose then printf "%a %s : %a@." pp_judgement j n pp_ttype tau;
       if j = JValue then

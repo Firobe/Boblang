@@ -1,8 +1,19 @@
-Typemacro LIST tau = rec(t, (unit + (tau * t)))
+Typemacro LIST tau = rec(list, (unit + (tau * list)))
 
 Macro NIL [tau] = fold[LIST(tau)](left[(unit + (tau * LIST(tau)))](()))
 
 Macro CONS [tau] =
     fun (x : tau) -> ret (fun (l : LIST(tau)) ->
-        fold[LIST(tau)](right[(unit + (tau * LIST(tau)))]((x ,l)))
+        ret(fold[LIST(tau)](right[(unit + (tau * LIST(tau)))]((x ,l))))
     )
+
+Macro LIST_ITER [tau] = FIX[((tau -> unit) -> (LIST(tau) -> unit))](iter, ret(
+    fun (f : (tau -> unit)) -> ret (fun (l : LIST(tau)) ->
+        let* l' = unfold(l) in
+        case l' of
+            left(_) -> ret(())
+            right(next) ->
+                lets (head, tail) = next in
+                let* _ = (f head) in
+                REC_CALL2(iter, f, tail)
+)))

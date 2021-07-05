@@ -1,7 +1,7 @@
 Bob libob.utils
 
-Typemacro SELF tau = rec(t, (t -> tau))
-Macro SELF [tau] expr = fold[SELF(tau)](fun (tmp : SELF(tau)) -> expr)
+Typemacro TSELF tau = rec(self, (self -> tau))
+Macro SELF [tau] expr = fold[TSELF(tau)](fun (tmp : TSELF(tau)) -> expr)
 Macro UNROLL g =
      let* unf = unfold(g) in
      (unf g)

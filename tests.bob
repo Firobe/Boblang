@@ -1,12 +1,31 @@
-Bob libob.factorial
-Bob libob.fibonacci
-
 (* Print 6! *)
+Bob libob.factorial
+Bob libob.print
+
 Eval 
     let* res = (factorial 6) in
     let* _ = (print_nat res) in
     (print_newline ())
 
-(* Print all fibonacci numbers *)
-Eval CURRY2(fibo_print, 0, 1)
+(* Test streams *)
+Bob libob.stream
 
+Declare 0s = FIX[STREAM(nat)](0s,
+    CURRY2(STREAM_PUSH[nat], 0, lazy(0s))
+)
+
+Eval STREAM_PRINT[nat](0s, 5, print_nat)
+
+(* Succ on stream *)
+Declare 1s = REC_CALL2(STREAM_MAP[nat], succ, 0s)
+
+Eval STREAM_PRINT[nat](1s, 5, print_nat)
+
+Declare 101s = REC_CALL2(STREAM_INTERLACE[nat], 0s, 1s)
+
+Eval STREAM_PRINT[nat](101s, 5, print_nat)
+
+(* Print all fibonacci numbers *)
+Bob libob.fibonacci
+
+Eval CURRY2(fibo_print, 0, 1)

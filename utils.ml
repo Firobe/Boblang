@@ -58,7 +58,8 @@ let rec pp_term fmt = function
   | Unit -> pp_print_string fmt "()"
   | Variable v -> pp_print_string fmt v
   | Computation t -> fprintf fmt "@[<hv 2>lazy(@,%a)@]" pp_term t
-  | Abstraction (_, id, e) -> fprintf fmt "@[<hv 2>λ(%s,@ %a)@]" id pp_term e
+  | Abstraction (ttype, id, e) ->
+    fprintf fmt "@[<hv 2>λ(%s : %a,@ %a)@]" id pp_ttype ttype pp_term e
   | Return t -> fprintf fmt "@[<hv 2>ret (@,%a)@]" pp_term t
   | Bind (t, id, e) -> fprintf fmt "@[<hv 2>let %s =@ %a@]@ in@ %a" id pp_term t pp_term e
   | Application (t1, t2) -> fprintf fmt "@[<hv 2>(@,%a@ .@ %a)@]" pp_term t1 pp_term t2
@@ -91,48 +92,54 @@ type command =
   | Eval of term
   | Include of string
 
-let rec tsubstitute f t = function
+let rec tsubstitute subs t = match t with
   | TUnit -> TUnit
-  | TVar id when id = f -> t
-  | (TVar _) as v -> v
+  | TVar id ->
+    begin match List.assoc_opt id subs with
+      | None -> t
+      | Some replacement -> replacement
+    end
   | TArrow (tau1, tau2) -> 
-    TArrow (tsubstitute f t tau1, tsubstitute f t tau2)
-  | TComp tau -> TComp (tsubstitute f t tau)
-  | TSum (tau1, tau2) -> TSum (tsubstitute f t tau1, tsubstitute f t tau2)
-  | TProduct (tau1, tau2) -> TProduct (tsubstitute f t tau1, tsubstitute f t tau2)
-  | (TRecursive (id, _)) as r when id = f -> r
-  | TRecursive (id, tau) -> TRecursive (id, tsubstitute f t tau)
-  | TMacro (id, tl) -> TMacro (id, List.map (tsubstitute f t) tl)
+    TArrow (tsubstitute subs tau1, tsubstitute subs tau2)
+  | TComp tau -> TComp (tsubstitute subs tau)
+  | TSum (tau1, tau2) -> TSum (tsubstitute subs tau1, tsubstitute subs tau2)
+  | TProduct (tau1, tau2) -> TProduct (tsubstitute subs tau1, tsubstitute subs tau2)
+  | TRecursive (id, tau) ->
+    TRecursive (id, tsubstitute (List.remove_assoc id subs) tau)
+  | TMacro (id, tl) -> TMacro (id, List.map (tsubstitute subs) tl)
 
 (* [substitute f t e] replaces variables named f in e by term t] *)
-let rec substitute f t = function
+let rec substitute subs t = match t with
   | Unit -> Unit
-  | Variable v when v = f -> t
-  | Variable v -> Variable v
-  | Computation c -> Computation (substitute f t c)
-  | Abstraction (_, id, _) as whole when id = f -> whole
-  | Abstraction (tt, id, a) -> Abstraction (tt, id, substitute f t a)
-  | Return r -> Return (substitute f t r)
-  | Force r -> Force (substitute f t r)
+  | Variable id ->
+    begin match List.assoc_opt id subs with
+      | None -> t
+      | Some replacement -> replacement
+    end
+  | Computation c -> Computation (substitute subs c)
+  | Abstraction (tt, id, a) ->
+    Abstraction (tt, id, substitute (List.remove_assoc id subs) a)
+  | Return r -> Return (substitute subs r)
+  | Force r -> Force (substitute subs r)
   | Bind (t1, id, t2) ->
-    Bind (substitute f t t1, id, if id = f then t2 else substitute f t t2)
-  | Application (t1, t2) -> Application (substitute f t t1, substitute f t t2)
-  | Right (ty, e) -> Right (ty, substitute f t e)
-  | Left (ty, e) -> Left (ty, substitute f t e)
+    Bind (substitute subs t1, id, substitute (List.remove_assoc id subs) t2)
+  | Application (t1, t2) -> Application (substitute subs t1, substitute subs t2)
+  | Right (ty, e) -> Right (ty, substitute subs e)
+  | Left (ty, e) -> Left (ty, substitute subs e)
   | Case (e, x1, e1, x2, e2) ->
-    let e' = substitute f t e in
-    let e1' = if f = x1 then e1 else substitute f t e1 in
-    let e2' = if f = x2 then e2 else substitute f t e2 in
+    let e' = substitute subs e in
+    let e1' = substitute (List.remove_assoc x1 subs) e1 in
+    let e2' = substitute (List.remove_assoc x2 subs) e2 in
     Case (e', x1, e1', x2, e2')
-  | Tuple (t1, t2) -> Tuple (substitute f t t1, substitute f t t2)
+  | Tuple (t1, t2) -> Tuple (substitute subs t1, substitute subs t2)
   | Split (e1, x1, x2, e2) ->
-    let e1' = substitute f t e1 in
-    let e2' = if f = x1 || f = x2 then e2 else substitute f t e2 in
+    let e1' = substitute subs e1 in
+    let e2' = substitute (List.remove_assoc x1 (List.remove_assoc x2 subs)) e2 in
     Split (e1', x1, x2, e2')
-  | Fold (a, e) -> Fold (a, substitute f t e)
-  | Unfold e -> Unfold (substitute f t e)
-  | Macro (id, ttl, tl) -> Macro (id, ttl, List.map (substitute f t) tl)
-  | Print_char e -> Print_char (substitute f t e)
+  | Fold (a, e) -> Fold (a, substitute subs e)
+  | Unfold e -> Unfold (substitute subs e)
+  | Macro (id, ttl, tl) -> Macro (id, ttl, List.map (substitute subs) tl)
+  | Print_char e -> Print_char (substitute subs e)
 
 let rec int_of_term = function
   | Fold (_, Right(_, next)) -> 1 + int_of_term next
