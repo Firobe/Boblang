@@ -16,11 +16,14 @@ Boblang comes with:
 - a wonky parser with terrible error messages
 - a mean typechecker and an unbounded interpreter
 - source files ending in .bob
+- a glorious standard library called libob
+
+As a proof that this language is very useful to do things,
+`examples/brainfuck.bob` contains a Brainfuck interpreter written in Boblang.
+
+See also `examples/example.bob` for a a basic introduction.
 
 ## Usage 
 
 Compile with `dune build boblang.exe`  
 Execute with `dune exec ./boblang.exe source.bob`  
-
-
-Read the `example.bob` file for examples of usage

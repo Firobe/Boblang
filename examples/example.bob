@@ -1,37 +1,72 @@
+(*
+    The only type is unit.
+    You can create new types by sum (variant) or addition (couple).
+    Branches of a sum types are not named. They are always only two, named
+    left and right.
+*)
+
 (* Declare a boolean type *)
 Type bool = (unit + unit)
 
-(* left() and right() operators need a type annotation to know to what type we
- * are injecting *)
+(*
+    Declare associates a value to a global identifier
+
+    left() and right() operators need a type annotation to know
+    to what type we are injecting
+*)
 Declare true = left[bool]( () )
 Declare false = right[bool]( () )
 
 (* Evaluate an expression *)
 Eval true
 
+(*
+    We can write functions, which always take a single argument.
+    Its type must be annotated.
+*)
+
+(*
+    In Boblang, everything is either a value
+    or a computation.
+    A computation is a term that might not be fully
+    evaluated yet.
+*)
+
 Declare flip = fun (x : bool) ->
+    (* We can match on sum types with case of *)
     case x of
-        left(_) (* true *) -> ret (false) (* lambdas should return lazyutations *)
-        right(_) (* false *) -> ret (true)
+        left(_) (* true *) ->
+            (* Functions are expected to return computations *)
+            (* ret() is a computation returning a simple value *)
+            ret (false)       
+        right(_) (* false *) ->
+            ret (true)
 
+(* Functions are applied as follows *)
 Eval (flip true)
-Eval false
 
-Macro C e v = let* _ = v in e
-
+(*
+    Create a function with two parameters that
+    applies the first to the second, twice.
+*)
 Declare apply_twice =
     fun (f : (bool -> bool)) -> ret(
         fun (x : bool) ->
-            (* The result of an application is a lazyutation,
-             * so we need to wrap it in a lazy and
-             * bind it with let* to get the value
-             *)
-            C((f _), (f x))
+            (* 
+                Functions expected fully computed values
+                as parameters (we call "by value").
+
+                We can transform a computation into a value by forcing
+                its evluation with the bind operator let*
+            *)
+            let* applied_once = (f x) in
+            (f applied_once)
     )
 
 (* Display the type of an expression *)
 Check (apply_twice flip)
 
+(* FLip a bool twice *)
 Eval
     let* double_flip = (apply_twice flip) in
     (double_flip true)
@@ -41,14 +76,15 @@ Type nat = rec(t, (unit + t))
 Declare 0 = fold[nat](left[(unit + nat)](()))
 Declare succ = fun (x : nat) -> ret (fold[nat](right[(unit + nat)](x)))
 
-(* Some testing *)
+(* 0, 1, 2, are just identifiers *)
 Declare 2 = let* 1 = (succ 0) in (succ 1)
 
 Declare minus_1 = fun (i : nat) ->
-     let* unpacked = unfold(i) in
-     case unpacked of
-         left(_) -> ret(0)
-         right(pred) -> ret(pred)
+    (* Recursive types need to be unfolded before being matched *)
+    let* unpacked = unfold(i) in
+    case unpacked of
+        left(_) -> ret(0)
+        right(pred) -> ret(pred)
 
 Eval (minus_1 2)
 
@@ -71,28 +107,43 @@ Macro FIX [tau] x e =
 
 
 (* A boring recursive function (eval it if you dare) *)
-Declare infinite = FIX[(unit -> unit)](infinite,
-    ret( fun (_ : unit) ->
-        C((_ ()), infinite)
+Declare infinite = FIX[(unit -> unit)](infinite, ret(
+    fun (_ : unit) ->
+        (* infinite is a computation, we need a value *)
+        let* infinite = infinite in (* we can shadow names *)
+        (infinite ())
     )
 )
 
 (* An exciting recursive function ! *)
-Declare double = FIX[(nat -> nat)](double,
- ret (fun (x : nat) ->
-     let* x' = unfold(x) in
-     case x' of
-         left(_) -> ret(0)
-         right(e) ->
-            C((succ  _), C((succ  _), C((_ e), double)))
-  ))
+Declare double = FIX[(nat -> nat)](double, ret(
+    fun (x : nat) ->
+        let* x' = unfold(x) in
+        case x' of
+            left(_) -> ret(0)
+            right(e) ->
+                let* double = double in
+                let* doubled = (double e) in
+                let* doubled = (succ doubled) in
+                (succ doubled)
+))
 
 (* Wow, 2 * 2 = 4 *)
 Eval (double  2)
 
-(* We can effectively simulate call by name *)
+(*
+    In Boblang, everything takes a
+    computed value as a parameter. Hence we cannot
+    "call by name" a function i.e. give it an uncomputed expression.
 
-(* Define an IF for branches returning suspended unit lazyutations *)
+    Boblang has a construct lazy(), which takes a computation and pauses it,
+    returning a value of type lazy that can then be passed.
+
+    Later, the computation can be resumed with force()
+    This way, We can effectively simulate call by name
+*)
+
+(* Define an IF for branches returning suspended unit computations *)
 Declare if_unit =
     fun (b : bool) -> ret (
     fun (e1 : lazy(unit)) -> ret (
@@ -105,7 +156,9 @@ Declare if_unit =
 (* A easier syntax for applicating it and automatically suspending
  * the computations of the parameters *)
 Macro IF_UNIT b e1 e2 =
-    C((_ lazy(e2)), C((_ lazy(e1)), (if_unit b)))
+    let* if_unit = (if_unit b) in
+    let* if_unit = (if_unit lazy(e1)) in
+    (if_unit lazy(e2))
 
 (* The infinite branch is not evaluated (try replacing false by true *)
 Eval
@@ -114,9 +167,17 @@ Eval
         ret(())
     )
 
-(* We can print and read characters (stored as nats) *)
+(* We can print and read characters (stored as numbers) *)
 Eval
     let* c? = (read_char) in
     case c? of (* Check if we could read a character *)
         left(c) -> (print_char c)
         right(_) -> ret(())
+
+(*
+    We can import another file with the Bob command.
+    It won't read files more than once.
+
+    Several basic construction are available in libob
+*)
+Bob libob.bool
