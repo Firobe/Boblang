@@ -35,132 +35,124 @@ Declare move_left = fun (tape : tape) ->
     let* after = CURRY2(STREAM_PUSH[nat], cell, lazy(ret(sright))) in
     ret((new_cell, (before, after)))
 
-(* Highly unoptimised because of LIST_NTH ! *)
-Declare jump_back = fun (prog : LIST(nat)) ->
-    FIX[(nat -> (nat -> nat))](jump_back, ret(
-        fun (pos : nat) -> ret(fun (stack : nat) ->
-            let* npos =
-                let* pos = unfold(pos) in
-                case pos of
-                    left(_) -> ret(0)
-                    right(pos') -> ret(pos')
-            in
-            let* command? = REC_CALL2(LIST_NTH[nat], pos, prog) in
-            case command? of
-                left(command) ->
-                    IFC((is_jump_past command),
-                        (* then *)
-                        IFC(CURRY2(equal, stack, 1),
-                            (* then *)
-                            ret(pos),
-                            (* else *)
-                            let* decr? = CURRY2(sub, stack, 1) in
-                            case decr? of
-                                left(decr) -> REC_CALL2(jump_back, npos, decr)
-                                right(_) -> ret(0) (* error *)
-                        ),
-                        (* else *)
-                        IFC((is_jump_back command),
-                            (* then *)
-                            let* stack = (succ stack) in
-                            REC_CALL2(jump_back, npos, stack)
-                            ,
-                            (* else *)
-                            REC_CALL2(jump_back, npos, stack)
-                        )
-                    )
-                right(_) -> ret(pos) (* error *)
-)))
-
-Declare jump_past = fun (prog : LIST(nat)) ->
-    FIX[(nat -> (nat -> nat))](jump_back, ret(
-        fun (pos : nat) -> ret(fun (stack : nat) ->
-            let* npos = (succ pos) in
-            let* command? = REC_CALL2(LIST_NTH[nat], pos, prog) in
-            case command? of
-                left(command) ->
-                    IFC((is_jump_back command),
-                        (* then *)
-                        IFC(CURRY2(equal, stack, 1),
-                            (* then *)
-                            ret(pos),
-                            (* else *)
-                            let* decr? = CURRY2(sub, stack, 1) in
-                            case decr? of
-                                left(decr) -> REC_CALL2(jump_back, npos, decr)
-                                right(_) -> ret(0) (* error *)
-                        ),
-                        (* else *)
-                        IFC((is_jump_past command),
-                            (* then *)
-                            let* stack = (succ stack) in
-                            REC_CALL2(jump_back, npos, stack)
-                            ,
-                            (* else *)
-                            REC_CALL2(jump_back, npos, stack)
-                        )
-                    )
-                right(_) -> ret(pos) (* error *)
-)))
-
+Declare jump_back = FIX[(nat -> (tape -> tape))](jump_back, ret(
+    fun (stack : nat) -> ret(fun (prog : tape) ->
+        lets (command, _) = prog in
+        let* nprog = (move_left prog) in
+        IFC((is_jump_past command),
+            (* then *)
+            IFC(CURRY2(equal, stack, 1),
+                (* then *)
+                ret(prog),
+                (* else *)
+                let* decr? = CURRY2(sub, stack, 1) in
+                case decr? of
+                    left(decr) -> REC_CALL2(jump_back, decr, nprog)
+                    right(_) -> ret(nprog) (* error *)
+            ),
+            (* else *)
+            IFC((is_jump_back command),
+                (* then *)
+                let* stack = (succ stack) in
+                REC_CALL2(jump_back, stack, nprog)
+                ,
+                (* else *)
+                REC_CALL2(jump_back, stack, nprog)
+)))))
+Declare jump_past = FIX[(nat -> (tape -> tape))](jump_past, ret(
+    fun (stack : nat) -> ret(fun (prog : tape) ->
+        lets (command, _) = prog in
+        let* nprog = (move_right prog) in
+        IFC((is_jump_back command),
+            (* then *)
+            IFC(CURRY2(equal, stack, 1),
+                (* then *)
+                ret(prog),
+                (* else *)
+                let* decr? = CURRY2(sub, stack, 1) in
+                case decr? of
+                    left(decr) -> REC_CALL2(jump_past, decr, nprog)
+                    right(_) -> ret(nprog) (* error *)
+            ),
+            (* else *)
+            IFC((is_jump_past command),
+                (* then *)
+                let* stack = (succ stack) in
+                REC_CALL2(jump_past, stack, nprog)
+                ,
+                (* else *)
+                REC_CALL2(jump_past, stack, nprog)
+)))))
+            
 Declare process_char =
-    fun (program : LIST(nat)) -> ret(fun (pos : (tape * nat)) -> ret(fun (c : nat) ->
-        lets (tape, pc) = pos in
+    fun (program : tape) -> ret(fun (tape : tape) -> ret(fun (c : nat) ->
         lets (cell, around) = tape in
         IFC((is_move_right c),
-            let* t' = (move_right tape) in ret((t', pc))
+            let* t' = (move_right tape) in ret((t', program))
         ,IFC((is_move_left c),
-            let* t' = (move_left tape) in ret((t', pc))
+            let* t' = (move_left tape) in ret((t', program))
         ,IFC((is_increment c),
             let* incr = (succ cell) in
-            ret(((incr, around),pc))
+            ret(((incr, around), program))
         ,IFC((is_decrement c),
             let* decr? = CURRY2(sub, cell, 1) in
             case decr? of
-                left(decr) -> ret(((decr, around), pc))
-                right(_) -> ret(pos)
+                left(decr) -> ret(((decr, around), program))
+                right(_) -> ret((tape, program))
         ,IFC((is_output c),
             let* _ = (print_char cell) in
-            ret(pos)
+            ret((tape, program))
         ,IFC((is_input c),
             let* c? = (read_char) in
             case c? of
-                left(c) -> ret(((c, around), pc))
-                right(_) -> ret(pos)
+                left(c) -> ret(((c, around), program))
+                right(_) -> ret((tape, program))
         ,IFC((is_jump_past c),
             let* cell = unfold(cell) in
             case cell of
                 left(_) ->
-                    let* pc' = CURRY3(jump_past, program, pc, 0) in
-                    ret((tape, pc'))
-                right(_) -> ret(pos)
+                    let* program' = CURRY2(jump_past, 0, program) in
+                    ret((tape, program'))
+                right(_) -> ret((tape, program))
         ,IFC((is_jump_back c),
             let* cell = unfold(cell) in
             case cell of
-                left(_) -> ret(pos)
+                left(_) -> ret((tape, program))
                 right(_) ->
-                    let* pc' = CURRY3(jump_back, program, pc, 0) in
-                    ret((tape, pc'))
-        ,ret(pos)))))))))
+                    let* program' = CURRY2(jump_back, 0, program) in
+                    ret((tape, program'))
+        ,ret((tape, program))))))))))
 ))
 
+Declare push_to_stream = FIXFUN[(LIST(nat) -> STREAM(nat))](push_to_stream,
+    fun (l : LIST(nat)) ->
+        let* l = unfold(l) in
+        case l of
+            left(_) -> CURRY2(STREAM_PUSH[nat], 36, lazy(ret(zeros)))
+            right(next) ->
+                lets (head, tail) = next in
+                let* str = REC_CALL(push_to_stream, tail) in
+                CURRY2(STREAM_PUSH[nat], head, lazy(ret(str)))
+)
+
 Declare interpret = fun (_ : unit) ->
-    let* program = (read_until 35) in
+    let* program_l = (read_until 35) in
+    let* program_s = (push_to_stream program_l) in
+    let* program_full = ret((0, (zeros, program_s))) in
     (* Should filter out useless commands from program *)
     let* init_tape = ret((0, (zeros, zeros))) in
     let* _ = (print_char 36) in (* Signal that reading is done with a $ *)
-    let* process = FIX[(nat -> (tape -> unit))](process, ret(
-        fun (pc : nat) -> ret(fun (tape : tape) ->
-            let* command? = REC_CALL2(LIST_NTH[nat], pc, program) in
-            case command? of
-                left(command) ->
-                    let* res = CURRY3(process_char, program, (tape, pc), command) in
-                    lets (tape', pc') = res in
-                    let* incr = (succ pc') in
-                    REC_CALL2(process, incr, tape')
-                right(command) -> ret(())
+    let* process = FIX[(tape -> (tape -> unit))](process, ret(
+        fun (program : tape) -> ret(fun (tape : tape) ->
+            lets (command, streams) = program in
+            IFC(CURRY2(equal, command, 36), ret(()),
+                let* res = CURRY3(process_char, program, tape, command) in
+                lets (tape', program') = res in
+                let* program'' = (move_right program') in
+                REC_CALL2(process, program'', tape')
+            )
     ))) in
-    let* _ = CURRY2(process, 0, init_tape) in
+    let* _ = CURRY2(process, program_full, init_tape) in
     (print_newline ())
 
 Eval (interpret ())
