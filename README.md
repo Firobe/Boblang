@@ -18,12 +18,19 @@ Boblang comes with:
 - source files ending in .bob
 - a glorious standard library called libob
 
-As a proof that this language is very useful to do things,
-`examples/brainfuck.bob` contains a Brainfuck interpreter written in Boblang.
-
 See also `examples/example.bob` for a a basic introduction.
 
 ## Usage 
 
 Compile with `dune build boblang.exe`  
 Execute with `dune exec ./boblang.exe source.bob`  
+
+## Usefulness
+
+As a proof that this language is very useful to do things,
+`examples/brainfuck.bob` contains a Brainfuck interpreter written in Boblang.
+
+With it, you can run the Brainfuck program contained in `examples/hello.fuck`  
+`dune exec ./boblang.exe examples/brainfuck.bob < examples/hello.fuck`  
+After consuming 100% of one of your CPUS for approximately one minute, it should
+eventually manage to print "Hello world!".
