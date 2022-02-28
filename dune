@@ -7,18 +7,10 @@
 (ocamllex boblex)
 
 (rule
-  (deps example.bob)
-  (action (with-stdout-to example.output (run ./boblang.exe example.bob)))
-)
-(rule
-  (deps stream.bob)
-  (action (with-stdout-to stream.output (run ./boblang.exe stream.bob)))
+  (deps examples/example.bob)
+  (action (with-stdout-to example.output (run ./boblang.exe examples/example.bob)))
 )
 (rule
   (alias runtest)
   (action (diff tests/example.expected example.output))
-)
-(rule
-  (alias runtest)
-  (action (diff tests/stream.expected stream.output))
 )
