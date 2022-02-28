@@ -1,68 +1,40 @@
 type bool : (1 + 1)
-
 val true : (1 + 1)
-
 val false : (1 + 1)
-
 eval -> val (1 + 1) =
-left(()
-)
-
+left(())
 val flip : ((1 + 1) -> (1 + 1))
-
 eval -> comput (1 + 1) =
-ret (right(()
-))
-
-eval -> val (1 + 1) =
-right(()
-)
-
-Macro C registered
-
+ret (right(()))
 val apply_twice : (((1 + 1) -> (1 + 1)) -> ((1 + 1) -> (1 + 1)))
-
 check -> comput ((1 + 1) -> (1 + 1))
-
 eval -> comput (1 + 1) =
-ret (left(()
-))
-
+ret (left(()))
 type nat : rec(t, (1 + t))
-
 val 0 : rec(t, (1 + t))
-
 val succ : (rec(t, (1 + t)) -> rec(t, (1 + t)))
-
 comput 2 : rec(t, (1 + t))
-
 val minus_1 : (rec(t, (1 + t)) -> rec(t, (1 + t)))
-
 eval -> comput rec(t, (1 + t)) =
-ret (fold(right(fold(left(())))
-))
-
+ret (fold(right(fold(left(())))))
 Typemacro SELF registered
-
 Macro SELF registered
-
 Macro UNROLL registered
-
 Macro FIX registered
-
 comput infinite : (1 -> 1)
-
 comput double : (rec(t, (1 + t)) -> rec(t, (1 + t)))
-
 eval -> comput rec(t, (1 + t)) =
-ret (fold(right(fold(right(fold(right(fold(right(fold(left(())))))))))
-))
-
+ret (fold(right(fold(right(fold(right(fold(right(fold(left(())))))))))))
 val if_unit : ((1 + 1) -> (lazy(1) -> (lazy(1) -> 1)))
-
 Macro IF_UNIT registered
-
 eval -> comput 1 =
 ret (())
-
+eval -> comput 1 =
+ret (())
+type bool : (1 + 1)
+val true : (1 + 1)
+val false : (1 + 1)
+Macro IF registered
+Macro IFC registered
+val not : ((1 + 1) -> (1 + 1))
 Done, bye!
